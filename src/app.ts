@@ -11,8 +11,12 @@ import { getHealth } from "./controllers/health.controller.js";
 export const createApp = (): Application => {
   const app = express();
 
-  // Security HTTP headers
-  app.use(helmet());
+  // Security HTTP headers with cross-origin allowed for API consumers
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+    })
+  );
 
   // Cross-Origin Resource Sharing
   app.use(
@@ -23,15 +27,27 @@ export const createApp = (): Application => {
       ) => {
         // Allow requests with no origin (like mobile apps, curl, or Postman)
         if (!origin) return callback(null, true);
+
+        // Always allow localhost and local IP addresses
+        const isLocal =
+          /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|192\.0\.0\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(
+            origin
+          );
+
         if (
+          isLocal ||
           config.nodeEnv === "development" ||
-          config.allowedOrigins.includes(origin)
+          config.allowedOrigins.includes(origin) ||
+          config.allowedOrigins.includes("*")
         ) {
           return callback(null, true);
         }
-        return callback(new Error("Blocked by CORS policy"));
+
+        return callback(null, false);
       },
       credentials: true,
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
     })
   );
 
