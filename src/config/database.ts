@@ -7,7 +7,7 @@ export const connectDatabase = async (): Promise<void> => {
       console.log(" MongoDB connection established successfully");
     });
 
-    mongoose.connection.on("error", (err) => {
+    mongoose.connection.on("error", (err: unknown) => {
       console.error("❌ MongoDB connection error:", err);
     });
 
