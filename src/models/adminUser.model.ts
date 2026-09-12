@@ -5,6 +5,12 @@ export interface IAdminUser extends Document {
   password: string; // Hashed password
   role: "admin" | "superadmin" | "master_admin" | "worker_admin";
   name?: string;
+  phone?: string;
+  location?: string;
+  ipAddress?: string;
+  deviceInfo?: string;
+  isFirstLogin?: boolean;
+  profileCompleted?: boolean;
   lastLoginAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -32,6 +38,30 @@ const adminUserSchema = new Schema<IAdminUser>(
     name: {
       type: String,
       trim: true,
+    },
+    phone: {
+      type: String,
+      trim: true,
+    },
+    location: {
+      type: String,
+      trim: true,
+    },
+    ipAddress: {
+      type: String,
+      trim: true,
+    },
+    deviceInfo: {
+      type: String,
+      trim: true,
+    },
+    isFirstLogin: {
+      type: Boolean,
+      default: true,
+    },
+    profileCompleted: {
+      type: Boolean,
+      default: false,
     },
     lastLoginAt: {
       type: Date,

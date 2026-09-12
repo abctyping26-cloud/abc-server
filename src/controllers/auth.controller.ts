@@ -125,7 +125,7 @@ export const loginAdmin = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { identifier, password } = req.body;
+    const { identifier, password, location, deviceInfo } = req.body;
 
     if (!identifier || !password) {
       res.status(400).json({
@@ -155,6 +155,8 @@ export const loginAdmin = async (
         password: hashedPassword,
         role: "master_admin",
         name: "Master Admin",
+        profileCompleted: true,
+        isFirstLogin: false,
       });
     }
 
@@ -178,8 +180,14 @@ export const loginAdmin = async (
       return;
     }
 
-    // Update last login
+    // Update last login, location & device info
     admin.lastLoginAt = new Date();
+    if (location) admin.location = location;
+    if (deviceInfo) admin.deviceInfo = deviceInfo;
+    const clientIp =
+      (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+      req.socket.remoteAddress;
+    if (clientIp) admin.ipAddress = clientIp;
     await admin.save();
 
     const token = generateToken({
@@ -197,6 +205,13 @@ export const loginAdmin = async (
           id: admin._id,
           identifier: admin.identifier,
           role: admin.role,
+          name: admin.name || "",
+          phone: admin.phone || "",
+          location: admin.location || "",
+          deviceInfo: admin.deviceInfo || "",
+          isFirstLogin: admin.isFirstLogin ?? (admin.role !== "master_admin"),
+          profileCompleted:
+            admin.profileCompleted ?? (admin.role === "master_admin"),
           lastLoginAt: admin.lastLoginAt,
         },
         token,
