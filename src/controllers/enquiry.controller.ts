@@ -1,5 +1,9 @@
 import type { Request, Response, NextFunction } from "express";
 import { Enquiry } from "../models/enquiry.model.js";
+import {
+  sendEnquiryNotification,
+  sendReplyToCustomer,
+} from "../services/email.service.js";
 
 /**
  * Create a new Enquiry (Client Facing)
@@ -11,12 +15,20 @@ export const createEnquiry = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { name, phone, service, otherService, submittedAt, notes } = req.body;
+    const { name, email, phone, service, otherService, submittedAt, notes } = req.body;
 
     if (!name || !name.trim()) {
       res.status(400).json({
         status: "fail",
         message: "Full name is required",
+      });
+      return;
+    }
+
+    if (!email || !email.trim()) {
+      res.status(400).json({
+        status: "fail",
+        message: "Email address is required",
       });
       return;
     }
@@ -39,6 +51,7 @@ export const createEnquiry = async (
 
     const enquiry = await Enquiry.create({
       name: name.trim(),
+      email: email.trim().toLowerCase(),
       phone: phone.trim(),
       service: service.trim(),
       otherService: otherService?.trim() || undefined,
@@ -46,6 +59,23 @@ export const createEnquiry = async (
       status: "pending",
       notes: notes?.trim() || undefined,
     });
+
+    // Dispatch real-time email alert to worker admin email via Resend
+    try {
+      await sendEnquiryNotification({
+        customerName: enquiry.name,
+        customerEmail: enquiry.email,
+        customerPhone: enquiry.phone,
+        service: enquiry.service,
+        message:
+          enquiry.otherService ||
+          enquiry.notes ||
+          "New enquiry submitted from the commercial website.",
+        workerEmail: "abctyping26@gmail.com",
+      });
+    } catch (emailErr) {
+      console.warn("Failed to dispatch enquiry email alert via Resend:", emailErr);
+    }
 
     res.status(201).json({
       status: "success",
@@ -193,6 +223,81 @@ export const deleteEnquiry = async (
     res.status(200).json({
       status: "success",
       message: "Enquiry deleted successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Reply to Enquiry by Email (Admin/Worker Facing)
+ * POST /api/v1/admin/enquiries/:id/reply
+ */
+export const replyToEnquiry = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { subject, message, senderName, responderRole } = req.body;
+
+    if (!message || !message.trim()) {
+      res.status(400).json({
+        status: "fail",
+        message: "Reply message body is required",
+      });
+      return;
+    }
+
+    const enquiry = await Enquiry.findById(id);
+
+    if (!enquiry) {
+      res.status(404).json({
+        status: "fail",
+        message: "Enquiry not found",
+      });
+      return;
+    }
+
+    if (!enquiry.email) {
+      res.status(400).json({
+        status: "fail",
+        message: "This enquiry does not have a customer email address on file.",
+      });
+      return;
+    }
+
+    // 1. Send reply email via Resend
+    await sendReplyToCustomer({
+      customerEmail: enquiry.email,
+      customerName: enquiry.name,
+      senderName: senderName?.trim() || "ABC Typing Support",
+      subject:
+        subject?.trim() ||
+        `Re: Your Enquiry for ${enquiry.service} - ABC Typing`,
+      message: message.trim(),
+    });
+
+    // 2. Mark enquiry as responded in MongoDB
+    enquiry.status = "responded";
+    enquiry.respondedBy = senderName?.trim() || "Admin";
+    enquiry.respondedByRole = responderRole || "worker_admin";
+    enquiry.respondedAt = new Date();
+    if (enquiry.notes) {
+      enquiry.notes += `\n[Reply Sent by ${enquiry.respondedBy}]: ${message.trim()}`;
+    } else {
+      enquiry.notes = `[Reply Sent by ${enquiry.respondedBy}]: ${message.trim()}`;
+    }
+
+    await enquiry.save();
+
+    res.status(200).json({
+      status: "success",
+      message: `Reply successfully delivered to ${enquiry.email} and marked as responded.`,
+      data: {
+        enquiry,
+      },
     });
   } catch (error) {
     next(error);

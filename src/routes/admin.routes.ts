@@ -11,6 +11,7 @@ import {
   getEnquiries,
   markEnquiryResponded,
   deleteEnquiry,
+  replyToEnquiry,
 } from "../controllers/enquiry.controller.js";
 
 const router = Router();
@@ -27,6 +28,7 @@ router.delete("/workers/:id", deleteWorkerAdmin);
 // Admin enquiry management routes
 router.get("/enquiries", getEnquiries);
 router.patch("/enquiries/:id/respond", markEnquiryResponded);
+router.post("/enquiries/:id/reply", replyToEnquiry);
 router.delete("/enquiries/:id", deleteEnquiry);
 
 export default router;
