@@ -138,9 +138,25 @@ export const loginAdmin = async (
     const normalizedIdentifier = identifier.trim().toLowerCase();
 
     // Look for admin in 'user-admin' collection
-    const admin = await AdminUser.findOne({
+    let admin = await AdminUser.findOne({
       identifier: normalizedIdentifier,
     });
+
+    // Auto-seed Master Admin on first authorized login if not already created
+    if (
+      !admin &&
+      normalizedIdentifier === "masteradmin@abc.com" &&
+      password === "Arun@2026"
+    ) {
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash("Arun@2026", salt);
+      admin = await AdminUser.create({
+        identifier: "masteradmin@abc.com",
+        password: hashedPassword,
+        role: "master_admin",
+        name: "Master Admin",
+      });
+    }
 
     if (!admin) {
       // STRICT: Do not create admin account automatically

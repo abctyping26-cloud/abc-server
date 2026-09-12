@@ -3,7 +3,7 @@ import { Schema, model, type Document } from "mongoose";
 export interface IAdminUser extends Document {
   identifier: string; // Admin ID or email
   password: string; // Hashed password
-  role: "admin" | "superadmin";
+  role: "admin" | "superadmin" | "master_admin" | "worker_admin";
   name?: string;
   lastLoginAt?: Date;
   createdAt: Date;
@@ -26,8 +26,8 @@ const adminUserSchema = new Schema<IAdminUser>(
     },
     role: {
       type: String,
-      enum: ["admin", "superadmin"],
-      default: "admin",
+      enum: ["admin", "superadmin", "master_admin", "worker_admin"],
+      default: "worker_admin",
     },
     name: {
       type: String,

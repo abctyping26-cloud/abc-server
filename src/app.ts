@@ -58,8 +58,8 @@ export const createApp = (): Application => {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // Root health check
-  app.get("/health", getHealth);
+  // Root health check (open CORS to allow pre-warming from any client domain)
+  app.get("/health", cors({ origin: true }), getHealth);
 
   // API router
   app.use("/api/v1", apiRouter);

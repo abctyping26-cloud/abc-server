@@ -7,9 +7,15 @@ const seedAdmin = async () => {
   await connectDatabase();
 
   const identifier =
-    process.argv[2] || process.env.INITIAL_ADMIN_EMAIL || "admin@abctyping.com";
+    process.argv[2] ||
+    process.env.INITIAL_ADMIN_EMAIL ||
+    "masteradmin@abc.com";
   const rawPassword =
-    process.argv[3] || process.env.INITIAL_ADMIN_PASSWORD || "Admin@123456";
+    process.argv[3] || process.env.INITIAL_ADMIN_PASSWORD || "Arun@2026";
+  const role =
+    identifier.toLowerCase() === "masteradmin@abc.com"
+      ? "master_admin"
+      : "superadmin";
 
   const normalizedIdentifier = identifier.trim().toLowerCase();
 
@@ -29,14 +35,14 @@ const seedAdmin = async () => {
       await AdminUser.create({
         identifier: normalizedIdentifier,
         password: hashedPassword,
-        role: "superadmin",
-        name: "Super Administrator",
+        role: role as "master_admin" | "superadmin",
+        name: role === "master_admin" ? "Master Admin" : "Super Administrator",
       });
 
       console.log(`✅ Admin account created successfully in 'user-admin':`);
       console.log(`   Identifier: ${normalizedIdentifier}`);
       console.log(`   Password:   ${rawPassword}`);
-      console.log(`   Role:       superadmin`);
+      console.log(`   Role:       ${role}`);
     }
   } catch (error) {
     console.error("❌ Failed to seed admin account:", error);
