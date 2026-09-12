@@ -11,6 +11,8 @@ const mongoUri =
 const jwtSecret =
   process.env.JWT_SECRET || "abc_secret_jwt_key_development_only";
 const jwtExpiresIn = process.env.JWT_EXPIRES_IN || "7d";
+const resendApiKey = process.env.RESEND_API_KEY || "";
+const emailFrom = process.env.EMAIL_FROM || "ABC Typing <onboarding@resend.dev>";
 
 export const config = {
   port,
@@ -21,6 +23,8 @@ export const config = {
   mongoUri,
   jwtSecret,
   jwtExpiresIn,
+  resendApiKey,
+  emailFrom,
   allowedOrigins: [clientUrl, adminUrl],
 };
 
