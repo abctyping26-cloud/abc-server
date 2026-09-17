@@ -45,10 +45,15 @@ export const loginCommercial = async (
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
 
+      const isEmail = normalizedIdentifier.includes("@");
       user = await CommercialUser.create({
         identifier: normalizedIdentifier,
         password: hashedPassword,
-        name: name?.trim() || undefined,
+        name: name?.trim() || "",
+        email: isEmail ? normalizedIdentifier : undefined,
+        phone: !isEmail ? normalizedIdentifier : undefined,
+        source: "website",
+        completed: false,
         lastLoginAt: new Date(),
       });
 
@@ -76,6 +81,14 @@ export const loginCommercial = async (
     }
 
     // Existing commercial user: verify password
+    if (!user.password) {
+      res.status(401).json({
+        status: "fail",
+        message: "This account does not have a password configured. Please contact support.",
+      });
+      return;
+    }
+
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       res.status(401).json({

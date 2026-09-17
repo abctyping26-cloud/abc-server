@@ -13,6 +13,9 @@ const jwtSecret =
 const jwtExpiresIn = process.env.JWT_EXPIRES_IN || "7d";
 const resendApiKey = process.env.RESEND_API_KEY || "";
 const emailFrom = process.env.EMAIL_FROM || "ABC Typing <onboarding@resend.dev>";
+const cloudinaryCloudName = process.env.CLOUDINARY_CLOUD_NAME || "";
+const cloudinaryApiKey = process.env.CLOUDINARY_API_KEY || "";
+const cloudinaryApiSecret = process.env.CLOUDINARY_API_SECRET || "";
 
 export const config = {
   port,
@@ -25,6 +28,9 @@ export const config = {
   jwtExpiresIn,
   resendApiKey,
   emailFrom,
+  cloudinaryCloudName,
+  cloudinaryApiKey,
+  cloudinaryApiSecret,
   allowedOrigins: [clientUrl, adminUrl],
 };
 
