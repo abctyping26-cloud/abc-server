@@ -187,3 +187,24 @@ export const sendReply = async (
     });
   }
 };
+
+/**
+ * Force subscribe WABA to app's webhooks via Meta Graph API
+ */
+export const handleSubscribeWaba = async (
+  _req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { subscribeWabaToApp } = await import("../services/whatsapp.service.js");
+    const result = await subscribeWabaToApp();
+    res.status(result.success ? 200 : 500).json(result);
+  } catch (error: any) {
+    console.error("❌ Error subscribing WABA to app:", error);
+    res.status(500).json({
+      success: false,
+      message: error?.message || "Failed to subscribe WABA to app",
+    });
+  }
+};
+

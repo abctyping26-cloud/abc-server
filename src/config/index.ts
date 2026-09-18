@@ -19,7 +19,9 @@ const cloudinaryApiSecret = process.env.CLOUDINARY_API_SECRET || "";
 
 // WhatsApp Cloud API Configuration
 const whatsappToken = process.env.WHATSAPP_TOKEN || "";
-const whatsappPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || "";
+const whatsappPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || "1432244939964891";
+const whatsappBusinessAccountId =
+  process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "1617944046653410";
 const whatsappVerifyToken =
   process.env.WHATSAPP_VERIFY_TOKEN || "abc_whatsapp_verify_token_secure";
 
@@ -39,6 +41,7 @@ export const config = {
   cloudinaryApiSecret,
   whatsappToken,
   whatsappPhoneNumberId,
+  whatsappBusinessAccountId,
   whatsappVerifyToken,
   allowedOrigins: [clientUrl, adminUrl],
 };

@@ -172,125 +172,178 @@ export const sendWhatsAppReply = async (
 };
 
 /**
- * Process incoming Meta webhook event payload
+ * Subscribe the WhatsApp Business Account (WABA) to this app's webhooks via Meta Graph API.
+ * This instructs Meta to forward incoming messages from the phone number to your webhook URL.
  */
-export const processIncomingWebhook = async (body: any): Promise<void> => {
-  if (body.object !== "whatsapp_business_account" || !Array.isArray(body.entry)) {
-    return;
+export const subscribeWabaToApp = async (): Promise<{
+  success: boolean;
+  data?: any;
+  error?: string;
+}> => {
+  if (!config.whatsappToken) {
+    return { success: false, error: "WHATSAPP_TOKEN is not configured" };
+  }
+  const wabaId = config.whatsappBusinessAccountId;
+  if (!wabaId) {
+    return {
+      success: false,
+      error: "WHATSAPP_BUSINESS_ACCOUNT_ID is not configured",
+    };
   }
 
-  for (const entry of body.entry) {
-    const changes = entry.changes || [];
-    for (const change of changes) {
-      if (change.field !== "messages") continue;
+  try {
+    const url = `https://graph.facebook.com/v22.0/${wabaId}/subscribed_apps`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.whatsappToken}`,
+        "Content-Type": "application/json",
+      },
+    });
 
-      const value = change.value;
-      if (!value) continue;
+    const data = await res.json();
+    console.log("📡 WABA Subscribed Apps response:", data);
+    return { success: res.ok, data };
+  } catch (err: any) {
+    console.error("❌ Failed to subscribe WABA to app:", err);
+    return { success: false, error: err.message };
+  }
+};
 
-      const businessPhoneNumberId =
-        value.metadata?.phone_number_id || config.whatsappPhoneNumberId;
+/**
+ * Process incoming Meta webhook event payload (handles both production and test payloads)
+ */
+export const processIncomingWebhook = async (body: any): Promise<void> => {
+  if (!body) return;
 
-      // Handle delivery & read status updates
-      if (Array.isArray(value.statuses)) {
-        for (const statusObj of value.statuses) {
-          const { id: statusMsgId, status } = statusObj;
-          if (statusMsgId && status) {
-            await WhatsAppMessage.findOneAndUpdate(
-              { messageId: statusMsgId },
-              { status: status as any }
-            ).exec();
+  const values: any[] = [];
+
+  if (Array.isArray(body.entry)) {
+    for (const entry of body.entry) {
+      const changes = entry.changes || [];
+      for (const change of changes) {
+        if (change.value) values.push(change.value);
+      }
+    }
+  } else if (body.value) {
+    values.push(body.value);
+  } else if (Array.isArray(body.changes)) {
+    for (const c of body.changes) {
+      if (c.value) values.push(c.value);
+    }
+  }
+
+  for (const value of values) {
+    const businessPhoneNumberId =
+      value.metadata?.phone_number_id || config.whatsappPhoneNumberId;
+
+    // Handle delivery & read status updates
+    if (Array.isArray(value.statuses)) {
+      for (const statusObj of value.statuses) {
+        const { id: statusMsgId, status } = statusObj;
+        if (statusMsgId && status) {
+          await WhatsAppMessage.findOneAndUpdate(
+            { messageId: statusMsgId },
+            { status: status as any }
+          ).exec();
+        }
+      }
+    }
+
+    // Handle incoming customer messages
+    if (Array.isArray(value.messages)) {
+      const contactMap = new Map<string, string>();
+      if (Array.isArray(value.contacts)) {
+        for (const c of value.contacts) {
+          const waId = c.wa_id || value.metadata?.display_phone_number;
+          if (waId && c.profile?.name) {
+            contactMap.set(waId, c.profile.name);
           }
         }
       }
 
-      // Handle incoming customer messages
-      if (Array.isArray(value.messages)) {
-        const contactMap = new Map<string, string>();
-        if (Array.isArray(value.contacts)) {
-          for (const c of value.contacts) {
-            if (c.wa_id && c.profile?.name) {
-              contactMap.set(c.wa_id, c.profile.name);
-            }
-          }
+      for (const msg of value.messages) {
+        const messageId =
+          msg.id || `wamid.mock_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        const senderPhone =
+          msg.from ||
+          value.contacts?.[0]?.wa_id ||
+          value.metadata?.display_phone_number ||
+          "16505551111";
+        const senderName =
+          contactMap.get(senderPhone) || value.contacts?.[0]?.profile?.name || "";
+        const msgType = (msg.type || "text") as WhatsAppMessageType;
+        const timestamp = msg.timestamp
+          ? new Date(parseInt(msg.timestamp, 10) * 1000)
+          : new Date();
+
+        // Prevent duplicate processing
+        const existing = await WhatsAppMessage.findOne({ messageId });
+        if (existing) continue;
+
+        let text = "";
+        let mediaId: string | undefined;
+        let mediaUrl: string | undefined;
+        let mediaMimeType: string | undefined;
+        let mediaFileName: string | undefined;
+        let mediaFileSize: number | undefined;
+
+        if (msgType === "text") {
+          text = msg.text?.body || "";
+        } else if (msgType === "image" && msg.image?.id) {
+          mediaId = msg.image.id;
+          text = msg.image.caption || "";
+          mediaMimeType = msg.image.mime_type;
+          const downloaded = await downloadAndPersistMedia(msg.image.id);
+          mediaUrl = downloaded.mediaUrl;
+        } else if (msgType === "document" && msg.document?.id) {
+          mediaId = msg.document.id;
+          text = msg.document.caption || "";
+          mediaFileName = msg.document.filename;
+          mediaMimeType = msg.document.mime_type;
+          const downloaded = await downloadAndPersistMedia(
+            msg.document.id,
+            mediaFileName
+          );
+          mediaUrl = downloaded.mediaUrl;
+          mediaFileSize = downloaded.fileSize;
+        } else if (msgType === "audio" && msg.audio?.id) {
+          mediaId = msg.audio.id;
+          mediaMimeType = msg.audio.mime_type;
+          const downloaded = await downloadAndPersistMedia(msg.audio.id);
+          mediaUrl = downloaded.mediaUrl;
+        } else if (msgType === "video" && msg.video?.id) {
+          mediaId = msg.video.id;
+          text = msg.video.caption || "";
+          mediaMimeType = msg.video.mime_type;
+          const downloaded = await downloadAndPersistMedia(msg.video.id);
+          mediaUrl = downloaded.mediaUrl;
+        } else if (msgType === "sticker" && msg.sticker?.id) {
+          mediaId = msg.sticker.id;
+          mediaMimeType = msg.sticker.mime_type;
+          const downloaded = await downloadAndPersistMedia(msg.sticker.id);
+          mediaUrl = downloaded.mediaUrl;
+        } else {
+          text = `[${msgType.toUpperCase()} message received]`;
         }
 
-        for (const msg of value.messages) {
-          const messageId = msg.id;
-          const senderPhone = msg.from;
-          const senderName = contactMap.get(senderPhone) || "";
-          const msgType = (msg.type || "text") as WhatsAppMessageType;
-          const timestamp = msg.timestamp
-            ? new Date(parseInt(msg.timestamp, 10) * 1000)
-            : new Date();
-
-          // Prevent duplicate processing
-          const existing = await WhatsAppMessage.findOne({ messageId });
-          if (existing) continue;
-
-          let text = "";
-          let mediaId: string | undefined;
-          let mediaUrl: string | undefined;
-          let mediaMimeType: string | undefined;
-          let mediaFileName: string | undefined;
-          let mediaFileSize: number | undefined;
-
-          if (msgType === "text") {
-            text = msg.text?.body || "";
-          } else if (msgType === "image" && msg.image?.id) {
-            mediaId = msg.image.id;
-            text = msg.image.caption || "";
-            mediaMimeType = msg.image.mime_type;
-            const downloaded = await downloadAndPersistMedia(msg.image.id);
-            mediaUrl = downloaded.mediaUrl;
-          } else if (msgType === "document" && msg.document?.id) {
-            mediaId = msg.document.id;
-            text = msg.document.caption || "";
-            mediaFileName = msg.document.filename;
-            mediaMimeType = msg.document.mime_type;
-            const downloaded = await downloadAndPersistMedia(
-              msg.document.id,
-              mediaFileName
-            );
-            mediaUrl = downloaded.mediaUrl;
-            mediaFileSize = downloaded.fileSize;
-          } else if (msgType === "audio" && msg.audio?.id) {
-            mediaId = msg.audio.id;
-            mediaMimeType = msg.audio.mime_type;
-            const downloaded = await downloadAndPersistMedia(msg.audio.id);
-            mediaUrl = downloaded.mediaUrl;
-          } else if (msgType === "video" && msg.video?.id) {
-            mediaId = msg.video.id;
-            text = msg.video.caption || "";
-            mediaMimeType = msg.video.mime_type;
-            const downloaded = await downloadAndPersistMedia(msg.video.id);
-            mediaUrl = downloaded.mediaUrl;
-          } else if (msgType === "sticker" && msg.sticker?.id) {
-            mediaId = msg.sticker.id;
-            mediaMimeType = msg.sticker.mime_type;
-            const downloaded = await downloadAndPersistMedia(msg.sticker.id);
-            mediaUrl = downloaded.mediaUrl;
-          } else {
-            text = `[${msgType.toUpperCase()} message received]`;
-          }
-
-          await WhatsAppMessage.create({
-            messageId,
-            customerPhone: senderPhone,
-            customerName: senderName,
-            businessPhoneNumberId,
-            direction: "incoming",
-            type: msgType,
-            text,
-            mediaId,
-            mediaUrl,
-            mediaMimeType,
-            mediaFileName,
-            mediaFileSize,
-            status: "received",
-            rawPayload: msg,
-            timestamp,
-          });
-        }
+        await WhatsAppMessage.create({
+          messageId,
+          customerPhone: senderPhone,
+          customerName: senderName,
+          businessPhoneNumberId,
+          direction: "incoming",
+          type: msgType,
+          text,
+          mediaId,
+          mediaUrl,
+          mediaMimeType,
+          mediaFileName,
+          mediaFileSize,
+          status: "received",
+          rawPayload: msg,
+          timestamp,
+        });
       }
     }
   }

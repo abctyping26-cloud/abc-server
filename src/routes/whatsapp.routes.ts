@@ -5,6 +5,7 @@ import {
   getConversations,
   getMessagesByCustomer,
   sendReply,
+  handleSubscribeWaba,
 } from "../controllers/whatsapp.controller.js";
 
 const router = Router();
@@ -19,5 +20,6 @@ router.post("/webhook", handleIncomingWebhook);
 router.get("/conversations", getConversations);
 router.get("/messages/:customerPhone", getMessagesByCustomer);
 router.post("/reply", sendReply);
+router.post("/subscribe-waba", handleSubscribeWaba);
 
 export default router;
