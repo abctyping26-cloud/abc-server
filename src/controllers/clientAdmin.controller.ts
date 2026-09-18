@@ -401,7 +401,8 @@ export const uploadClientFiles = async (
     for (const file of uploadedFiles) {
       const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
       const isImage = file.mimetype.startsWith("image/");
-      const resourceType = isImage ? "image" : "raw";
+      const isPdf = file.mimetype === "application/pdf" || file.originalname.toLowerCase().endsWith(".pdf");
+      const resourceType = isImage || isPdf ? "image" : "raw";
 
       const cloudResult = await uploadStreamToCloudinary(file.buffer, {
         folder: `abc_clients/${client._id}/documents`,
@@ -476,10 +477,17 @@ export const deleteClientFile = async (
 
     const fileToDelete = client.files[fileIndex];
 
-    // Remove from Cloudinary
     try {
       const isImage = fileToDelete.fileType?.startsWith("image/");
-      await deleteFromCloudinary(fileToDelete.public_id, isImage ? "image" : "raw");
+      const isPdf = fileToDelete.fileType === "application/pdf" || fileToDelete.fileName?.toLowerCase().endsWith(".pdf");
+      const resourceType = isImage || isPdf ? "image" : "raw";
+      try {
+        await deleteFromCloudinary(fileToDelete.public_id, resourceType);
+      } catch {
+        if (resourceType === "image") {
+          await deleteFromCloudinary(fileToDelete.public_id, "raw");
+        }
+      }
     } catch (cloudErr) {
       console.warn("⚠️ Could not delete asset from Cloudinary (might already be removed):", cloudErr);
     }
