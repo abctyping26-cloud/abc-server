@@ -17,6 +17,12 @@ const cloudinaryCloudName = process.env.CLOUDINARY_CLOUD_NAME || "";
 const cloudinaryApiKey = process.env.CLOUDINARY_API_KEY || "";
 const cloudinaryApiSecret = process.env.CLOUDINARY_API_SECRET || "";
 
+// WhatsApp Cloud API Configuration
+const whatsappToken = process.env.WHATSAPP_TOKEN || "";
+const whatsappPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || "";
+const whatsappVerifyToken =
+  process.env.WHATSAPP_VERIFY_TOKEN || "abc_whatsapp_verify_token_secure";
+
 export const config = {
   port,
   nodeEnv,
@@ -31,6 +37,9 @@ export const config = {
   cloudinaryCloudName,
   cloudinaryApiKey,
   cloudinaryApiSecret,
+  whatsappToken,
+  whatsappPhoneNumberId,
+  whatsappVerifyToken,
   allowedOrigins: [clientUrl, adminUrl],
 };
 
