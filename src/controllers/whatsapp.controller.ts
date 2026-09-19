@@ -5,6 +5,10 @@ import {
   type IWhatsAppMessage,
 } from "../models/whatsappMessage.model.js";
 import {
+  WhatsAppQuickReply,
+  type IWhatsAppQuickReply,
+} from "../models/whatsappQuickReply.model.js";
+import {
   processIncomingWebhook,
   sendWhatsAppReply,
 } from "../services/whatsapp.service.js";
@@ -45,15 +49,17 @@ export const handleIncomingWebhook = async (
 };
 
 /**
- * Get all active customer conversations grouped by phone number
+ * Get all active customer conversations grouped by phone number with counts and filtering
  */
 export const getConversations = async (
-  _req: Request,
+  req: Request,
   res: Response
 ): Promise<void> => {
   try {
+    const { status, q } = req.query;
+
     // Group messages by customerPhone to get latest activity
-    const conversations = await WhatsAppMessage.aggregate([
+    const rawConversations = await WhatsAppMessage.aggregate([
       {
         $sort: { timestamp: -1 },
       },
@@ -68,6 +74,8 @@ export const getConversations = async (
           lastTimestamp: { $first: "$timestamp" },
           totalMessages: { $sum: 1 },
           lastStatus: { $first: "$status" },
+          firstMessage: { $last: "$text" },
+          firstTimestamp: { $last: "$timestamp" },
         },
       },
       {
@@ -75,15 +83,96 @@ export const getConversations = async (
       },
     ]);
 
+    // Enhance conversations with pending flag and status
+    const allConversations = rawConversations.map((conv) => {
+      const isPending = conv.lastDirection === "incoming";
+      return {
+        ...conv,
+        isPending,
+        status: isPending ? "pending" : "responded",
+      };
+    });
+
+    const totalCount = allConversations.length;
+    const pendingCount = allConversations.filter((c) => c.isPending).length;
+    const respondedCount = allConversations.filter((c) => !c.isPending).length;
+
+    let filtered = allConversations;
+
+    // Filter by status if requested
+    if (status && status !== "all") {
+      if (status === "pending") {
+        filtered = filtered.filter((c) => c.isPending);
+      } else if (status === "responded") {
+        filtered = filtered.filter((c) => !c.isPending);
+      }
+    }
+
+    // Filter by search query if requested
+    if (q && typeof q === "string" && q.trim()) {
+      const query = q.trim().toLowerCase();
+      filtered = filtered.filter((c) => {
+        const phone = (c.customerPhone || "").toLowerCase();
+        const name = (c.customerName || "").toLowerCase();
+        const lastMsg = (c.lastMessage || "").toLowerCase();
+        const firstMsg = (c.firstMessage || "").toLowerCase();
+        return (
+          phone.includes(query) ||
+          name.includes(query) ||
+          lastMsg.includes(query) ||
+          firstMsg.includes(query)
+        );
+      });
+    }
+
     res.status(200).json({
       success: true,
-      data: conversations,
+      data: filtered,
+      counts: {
+        total: totalCount,
+        pending: pendingCount,
+        responded: respondedCount,
+      },
     });
   } catch (error: any) {
     console.error("❌ Error fetching WhatsApp conversations:", error);
     res.status(500).json({
       success: false,
       message: "Failed to retrieve WhatsApp conversations",
+      error: error?.message,
+    });
+  }
+};
+
+/**
+ * Delete all messages for a specific customer phone (clear conversation)
+ * DELETE /api/v1/whatsapp/conversations/:customerPhone
+ */
+export const deleteConversation = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const customerPhoneParam = req.params.customerPhone;
+    const customerPhone = Array.isArray(customerPhoneParam)
+      ? customerPhoneParam[0]
+      : customerPhoneParam || "";
+    const cleanPhone = customerPhone.replace(/\D/g, "");
+
+    const result = await WhatsAppMessage.deleteMany({
+      customerPhone: { $in: [customerPhone, cleanPhone] },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Deleted ${result.deletedCount} messages for customer ${cleanPhone}`,
+      deletedCount: result.deletedCount,
+    });
+  } catch (error: any) {
+    console.error("❌ Error deleting WhatsApp conversation:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete WhatsApp conversation",
       error: error?.message,
     });
   }
@@ -207,4 +296,176 @@ export const handleSubscribeWaba = async (
     });
   }
 };
+
+/**
+ * Get all quick replies (seeds defaults if empty)
+ */
+export const getQuickReplies = async (
+  _req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    let replies = await WhatsAppQuickReply.find().sort({ order: 1, createdAt: 1 });
+
+    // Seed defaults if empty
+    if (replies.length === 0) {
+      const defaultReplies = [
+        {
+          title: "Greeting",
+          text: "Hello {{customerName}}! Thank you for reaching out to ABC Typing Services. How can we help you today?",
+          category: "general",
+          order: 1,
+        },
+        {
+          title: "Document Request",
+          text: "Could you please share your documents (passport copy, Emirates ID) so our team can review them?",
+          category: "documents",
+          order: 2,
+        },
+        {
+          title: "Processing Update",
+          text: "Your application is currently being processed by our clearance team. We will notify you as soon as it is approved.",
+          category: "updates",
+          order: 3,
+        },
+        {
+          title: "Office Location",
+          text: "Our office is located in Abu Dhabi. You are welcome to visit us in person or complete everything online through WhatsApp!",
+          category: "general",
+          order: 4,
+        },
+        {
+          title: "Government Clearance",
+          text: "Please let us know if you need any further assistance with your UAE government clearance, visa, or labour services.",
+          category: "services",
+          order: 5,
+        },
+      ];
+      replies = await WhatsAppQuickReply.insertMany(defaultReplies);
+    }
+
+    res.status(200).json({
+      success: true,
+      data: replies,
+    });
+  } catch (error: any) {
+    console.error("❌ Error fetching quick replies:", error);
+    res.status(500).json({
+      success: false,
+      message: error?.message || "Failed to fetch quick replies",
+    });
+  }
+};
+
+/**
+ * Create a new custom quick reply
+ */
+export const createQuickReply = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { title, text, category, order } = req.body;
+
+    if (!title?.trim() || !text?.trim()) {
+      res.status(400).json({
+        success: false,
+        message: "Title and message text are required",
+      });
+      return;
+    }
+
+    const count = await WhatsAppQuickReply.countDocuments();
+    const newReply = await WhatsAppQuickReply.create({
+      title: title.trim(),
+      text: text.trim(),
+      category: category?.trim() || "general",
+      order: typeof order === "number" ? order : count + 1,
+    });
+
+    res.status(201).json({
+      success: true,
+      data: newReply,
+    });
+  } catch (error: any) {
+    console.error("❌ Error creating quick reply:", error);
+    res.status(500).json({
+      success: false,
+      message: error?.message || "Failed to create quick reply",
+    });
+  }
+};
+
+/**
+ * Update an existing quick reply
+ */
+export const updateQuickReply = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { title, text, category, order } = req.body;
+
+    const reply = await WhatsAppQuickReply.findById(id);
+    if (!reply) {
+      res.status(404).json({
+        success: false,
+        message: "Quick reply not found",
+      });
+      return;
+    }
+
+    if (title !== undefined) reply.title = title.trim();
+    if (text !== undefined) reply.text = text.trim();
+    if (category !== undefined) reply.category = category.trim();
+    if (typeof order === "number") reply.order = order;
+
+    await reply.save();
+
+    res.status(200).json({
+      success: true,
+      data: reply,
+    });
+  } catch (error: any) {
+    console.error("❌ Error updating quick reply:", error);
+    res.status(500).json({
+      success: false,
+      message: error?.message || "Failed to update quick reply",
+    });
+  }
+};
+
+/**
+ * Delete a quick reply
+ */
+export const deleteQuickReply = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const deleted = await WhatsAppQuickReply.findByIdAndDelete(id);
+
+    if (!deleted) {
+      res.status(404).json({
+        success: false,
+        message: "Quick reply not found",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Quick reply deleted successfully",
+    });
+  } catch (error: any) {
+    console.error("❌ Error deleting quick reply:", error);
+    res.status(500).json({
+      success: false,
+      message: error?.message || "Failed to delete quick reply",
+    });
+  }
+};
+
 
