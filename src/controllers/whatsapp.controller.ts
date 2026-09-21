@@ -8,6 +8,8 @@ import {
   WhatsAppQuickReply,
   type IWhatsAppQuickReply,
 } from "../models/whatsappQuickReply.model.js";
+import { CommercialUser } from "../models/commercialUser.model.js";
+import { Enquiry } from "../models/enquiry.model.js";
 import {
   processIncomingWebhook,
   sendWhatsAppReply,
@@ -198,6 +200,9 @@ export const getMessagesByCustomer = async (
       .sort({ timestamp: 1 })
       .lean();
 
+    const firstMessage = messages.length > 0 ? messages[0] : null;
+    const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+
     // Check if 24-hour window is currently active (based on last incoming message)
     const lastIncoming = messages
       .filter((m) => m.direction === "incoming")
@@ -208,13 +213,69 @@ export const getMessagesByCustomer = async (
         24 * 60 * 60 * 1000
       : false;
 
+    // Lookup linked client in MongoDB (CommercialUser & Enquiry collections)
+    const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+    const [linkedClient, linkedEnquiry] = await Promise.all([
+      last10
+        ? CommercialUser.findOne({
+            $or: [
+              { phone: { $regex: last10 } },
+              { identifier: cleanPhone },
+              { identifier: { $regex: last10 } },
+            ],
+          })
+            .select("name email phone address pin completed source createdAt")
+            .lean()
+        : null,
+      last10
+        ? Enquiry.findOne({
+            phone: { $regex: last10 },
+          })
+            .sort({ submittedAt: -1 })
+            .select("name email phone service status submittedAt notes")
+            .lean()
+        : null,
+    ]);
+
+    const resolvedName =
+      messages.find((m) => m.customerName)?.customerName ||
+      linkedClient?.name ||
+      linkedEnquiry?.name ||
+      "";
+
     res.status(200).json({
       success: true,
       data: {
         customerPhone: cleanPhone,
-        customerName: messages.find((m) => m.customerName)?.customerName || "",
+        customerName: resolvedName,
         isWindowOpen,
         lastIncomingTime: lastIncoming ? lastIncoming.timestamp : null,
+        totalMessages: messages.length,
+        firstMessageTime: firstMessage ? firstMessage.timestamp : null,
+        lastMessageTime: lastMessage ? lastMessage.timestamp : null,
+        linkedClient: linkedClient
+          ? {
+              _id: linkedClient._id,
+              name: linkedClient.name,
+              email: linkedClient.email,
+              phone: linkedClient.phone,
+              address: linkedClient.address,
+              pin: linkedClient.pin,
+              completed: linkedClient.completed,
+              source: linkedClient.source,
+              createdAt: linkedClient.createdAt,
+            }
+          : null,
+        linkedEnquiry: linkedEnquiry
+          ? {
+              _id: linkedEnquiry._id,
+              name: linkedEnquiry.name,
+              email: linkedEnquiry.email,
+              service: linkedEnquiry.service,
+              status: linkedEnquiry.status,
+              submittedAt: linkedEnquiry.submittedAt,
+            }
+          : null,
         messages,
       },
     });
