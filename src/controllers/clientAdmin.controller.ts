@@ -25,22 +25,42 @@ const resolveAdminObjectId = async (
 };
 
 /**
- * Check if the authenticated admin has permission to view or manage this client
+ * Check if the authenticated admin has permission to view or manage this client.
+ * All authenticated admins (Master Admin & Worker Employees) have access to view, update, and manage all clients.
  */
-const hasClientPermission = (admin: AuthenticatedRequest["admin"], client: any): boolean => {
+const hasClientPermission = (admin: AuthenticatedRequest["admin"], _client: any): boolean => {
+  if (!admin) return false;
+  return true;
+};
+
+/**
+ * Check if the authenticated admin has permission to permanently delete this client.
+ * Master/Super Admins can delete any client.
+ * Worker Admins can delete clients they personally created.
+ */
+const hasClientDeletePermission = async (
+  admin: AuthenticatedRequest["admin"],
+  client: any
+): Promise<boolean> => {
   if (!admin) return false;
   if (admin.role === "master_admin" || admin.role === "superadmin") return true;
-  // Website users are accessible to all worker admins
-  if (client.source === "website") return true;
-  // Worker-created clients are only accessible to their creator
-  if (client.createdBy && client.createdBy.toString() === admin.id) return true;
+
+  const creatorId = client.createdBy?._id || client.createdBy?.id || client.createdBy;
+  if (!creatorId) return false;
+
+  const adminObjectId = await resolveAdminObjectId(admin);
+  if (adminObjectId && creatorId.toString() === adminObjectId.toString()) {
+    return true;
+  }
+  if (admin.id && creatorId.toString() === admin.id.toString()) {
+    return true;
+  }
   return false;
 };
 
 /**
- * Get all Clients / Commercial Users with role-based scoping
- * - Master Admin: Sees ALL clients (website + all workers)
- * - Worker Admin: Sees Website users + clients they created themselves
+ * Get all Clients / Commercial Users
+ * - All authenticated admins (Master Admin & Worker Employees) see the complete clients dataset
  */
 export const getClients = async (
   req: AuthenticatedRequest,
@@ -54,17 +74,7 @@ export const getClients = async (
       return;
     }
 
-    const isMaster = admin.role === "master_admin" || admin.role === "superadmin";
     const filter: Record<string, any> = {};
-
-    // Apply role-based scoping
-    if (!isMaster) {
-      const creatorId = await resolveAdminObjectId(admin);
-      filter.$or = [
-        { source: "website" },
-        ...(creatorId ? [{ createdBy: creatorId }] : []),
-      ];
-    }
 
     // Optional status filter: completed = true / false
     if (req.query.completed !== undefined) {
@@ -634,10 +644,11 @@ export const deleteClient = async (
       return;
     }
 
-    if (!hasClientPermission(req.admin, client)) {
+    const canDelete = await hasClientDeletePermission(req.admin, client);
+    if (!canDelete) {
       res.status(403).json({
         status: "fail",
-        message: "You do not have permission to delete this client.",
+        message: "Only the creator or a Master Admin has permission to delete this client.",
       });
       return;
     }
