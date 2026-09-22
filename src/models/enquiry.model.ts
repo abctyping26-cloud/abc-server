@@ -11,6 +11,11 @@ export interface IEnquiry extends Document {
   respondedBy?: string;
   respondedByRole?: "master_admin" | "worker_admin" | "superadmin" | "admin";
   respondedAt?: Date;
+  claimedBy?: string | null;
+  claimedByName?: string;
+  claimedByRole?: "master_admin" | "worker_admin" | "superadmin" | "admin";
+  claimedByEmail?: string;
+  claimedAt?: Date;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -63,6 +68,28 @@ const enquirySchema = new Schema<IEnquiry>(
       enum: ["master_admin", "worker_admin", "superadmin", "admin"],
     },
     respondedAt: {
+      type: Date,
+    },
+    claimedBy: {
+      type: String,
+      trim: true,
+      default: null,
+      index: true,
+    },
+    claimedByName: {
+      type: String,
+      trim: true,
+    },
+    claimedByRole: {
+      type: String,
+      enum: ["master_admin", "worker_admin", "superadmin", "admin"],
+    },
+    claimedByEmail: {
+      type: String,
+      trim: true,
+      lowercase: true,
+    },
+    claimedAt: {
       type: Date,
     },
     notes: {

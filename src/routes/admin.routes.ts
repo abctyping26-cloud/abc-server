@@ -12,6 +12,8 @@ import {
   markEnquiryResponded,
   deleteEnquiry,
   replyToEnquiry,
+  claimEnquiry,
+  unclaimEnquiry,
 } from "../controllers/enquiry.controller.js";
 
 const router = Router();
@@ -27,6 +29,8 @@ router.delete("/workers/:id", deleteWorkerAdmin);
 
 // Admin enquiry management routes
 router.get("/enquiries", getEnquiries);
+router.patch("/enquiries/:id/claim", claimEnquiry);
+router.patch("/enquiries/:id/unclaim", unclaimEnquiry);
 router.patch("/enquiries/:id/respond", markEnquiryResponded);
 router.post("/enquiries/:id/reply", replyToEnquiry);
 router.delete("/enquiries/:id", deleteEnquiry);
