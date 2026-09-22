@@ -4,6 +4,7 @@ import {
   WhatsAppMessage,
   type WhatsAppMessageType,
 } from "../models/whatsappMessage.model.js";
+import { handleWhatsAppAutomation } from "./whatsappAutomation.service.js";
 
 interface MetaMediaInfo {
   url: string;
@@ -344,6 +345,23 @@ export const processIncomingWebhook = async (body: any): Promise<void> => {
           rawPayload: msg,
           timestamp,
         });
+
+        // Trigger automated client session workflow if applicable
+        try {
+          await handleWhatsAppAutomation({
+            senderPhone,
+            msgType,
+            text,
+            media: {
+              mediaUrl,
+              mediaMimeType,
+              mediaFileName,
+              mediaFileSize,
+            },
+          });
+        } catch (automationErr) {
+          console.error("❌ Error in WhatsApp automation handler:", automationErr);
+        }
       }
     }
   }
