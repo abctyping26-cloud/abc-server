@@ -34,13 +34,29 @@ export const createApp = (): Application => {
             origin
           );
 
-        if (
-          isLocal ||
-          config.nodeEnv === "development" ||
-          config.allowedOrigins.includes(origin) ||
-          config.allowedOrigins.includes("*")
-        ) {
+        if (isLocal || config.nodeEnv === "development" || config.allowedOrigins.includes("*")) {
           return callback(null, true);
+        }
+
+        const cleanOrigin = origin.replace(/\/$/, "").toLowerCase();
+        const configuredOrigins = [
+          ...config.allowedOrigins,
+          ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(",") : []),
+        ].map((o) => o.trim().replace(/\/$/, "").toLowerCase());
+
+        if (configuredOrigins.includes(cleanOrigin)) {
+          return callback(null, true);
+        }
+
+        try {
+          const parsed = new URL(origin);
+          const hostname = parsed.hostname.toLowerCase();
+          // Allow all Vercel and Render frontend deployments
+          if (hostname.endsWith(".vercel.app") || hostname.endsWith(".onrender.com")) {
+            return callback(null, true);
+          }
+        } catch {
+          // Ignore URL parsing errors
         }
 
         return callback(null, false);

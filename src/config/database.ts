@@ -1,5 +1,33 @@
 import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 import { config } from "./index.js";
+import { AdminUser } from "../models/adminUser.model.js";
+
+/**
+ * Ensures that the master admin account exists in 'user-admin' collection.
+ */
+const ensureMasterAdmin = async (): Promise<void> => {
+  try {
+    const existing = await AdminUser.findOne({
+      identifier: "masteradmin@abc.com",
+    });
+    if (!existing) {
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash("Arun@2026", salt);
+      await AdminUser.create({
+        identifier: "masteradmin@abc.com",
+        password: hashedPassword,
+        role: "master_admin",
+        name: "Master Admin",
+        profileCompleted: true,
+        isFirstLogin: false,
+      });
+      console.log("✅ Seeded master admin (masteradmin@abc.com) in 'user-admin' collection.");
+    }
+  } catch (err) {
+    console.error("⚠️ Failed to ensure master admin on startup:", err);
+  }
+};
 
 export const connectDatabase = async (): Promise<void> => {
   try {
@@ -16,6 +44,7 @@ export const connectDatabase = async (): Promise<void> => {
     });
 
     await mongoose.connect(config.mongoUri);
+    await ensureMasterAdmin();
   } catch (error) {
     console.error("❌ Failed to connect to MongoDB:", error);
     // In production, you may want to exit process if DB is critical

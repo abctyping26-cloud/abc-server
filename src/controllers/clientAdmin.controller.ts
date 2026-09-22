@@ -1,8 +1,28 @@
 import type { Response, NextFunction } from "express";
 import { Types } from "mongoose";
 import { CommercialUser, type IClientFile } from "../models/commercialUser.model.js";
+import { AdminUser } from "../models/adminUser.model.js";
 import { uploadStreamToCloudinary, deleteFromCloudinary } from "../config/cloudinary.js";
 import type { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
+
+/**
+ * Safely resolve an admin's ObjectId, falling back to database lookup by identifier if admin.id is not a valid ObjectId
+ */
+const resolveAdminObjectId = async (
+  admin?: AuthenticatedRequest["admin"]
+): Promise<Types.ObjectId | undefined> => {
+  if (!admin) return undefined;
+  if (admin.id && Types.ObjectId.isValid(admin.id)) {
+    return new Types.ObjectId(admin.id);
+  }
+  if (admin.identifier) {
+    const doc = await AdminUser.findOne({
+      identifier: admin.identifier.trim().toLowerCase(),
+    });
+    if (doc) return doc._id as Types.ObjectId;
+  }
+  return undefined;
+};
 
 /**
  * Check if the authenticated admin has permission to view or manage this client
@@ -39,9 +59,10 @@ export const getClients = async (
 
     // Apply role-based scoping
     if (!isMaster) {
+      const creatorId = await resolveAdminObjectId(admin);
       filter.$or = [
         { source: "website" },
-        { createdBy: new Types.ObjectId(admin.id) },
+        ...(creatorId ? [{ createdBy: creatorId }] : []),
       ];
     }
 
@@ -199,15 +220,27 @@ export const createClient = async (
       identifier = `client_${slug}_${Date.now()}`;
     }
 
-    // Check if identifier is already in use
-    const existing = await CommercialUser.findOne({ identifier });
+    // Check if identifier, email, or phone is already in use
+    const conflictConditions: Array<Record<string, any>> = [{ identifier }];
+    if (trimmedEmail) conflictConditions.push({ email: trimmedEmail });
+    if (trimmedPhone) conflictConditions.push({ phone: trimmedPhone });
+
+    const existing = await CommercialUser.findOne({ $or: conflictConditions });
     if (existing) {
+      let duplicateField = "identifier " + identifier;
+      if (trimmedEmail && existing.email === trimmedEmail) {
+        duplicateField = "email " + trimmedEmail;
+      } else if (trimmedPhone && existing.phone === trimmedPhone) {
+        duplicateField = "phone number " + trimmedPhone;
+      }
       res.status(409).json({
         status: "fail",
-        message: `A client with ${trimmedEmail ? "email " + trimmedEmail : "identifier " + identifier} already exists.`,
+        message: `A client with ${duplicateField} already exists.`,
       });
       return;
     }
+
+    const createdByObjectId = await resolveAdminObjectId(admin);
 
     const newClient = await CommercialUser.create({
       identifier,
@@ -218,7 +251,7 @@ export const createClient = async (
       pin: pin?.trim() || "",
       completed: completed === true || completed === "true",
       source: "manual",
-      createdBy: new Types.ObjectId(admin.id),
+      createdBy: createdByObjectId || undefined,
       files: [],
     });
 
@@ -238,12 +271,20 @@ export const createClient = async (
           photo: null,
           files: [],
           source: newClient.source,
-          createdBy: admin.id,
+          createdBy: createdByObjectId ? createdByObjectId.toString() : admin.id,
           createdAt: newClient.createdAt,
         },
       },
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 11000) {
+      const field = Object.keys(error.keyPattern || error.keyValue || {})[0] || "detail";
+      res.status(409).json({
+        status: "fail",
+        message: `A client with this ${field} already exists in the database.`,
+      });
+      return;
+    }
     next(error);
   }
 };
@@ -396,6 +437,7 @@ export const uploadClientFiles = async (
     }
 
     const uploadedRecords: IClientFile[] = [];
+    const uploaderObjectId = await resolveAdminObjectId(req.admin);
 
     // Stream each file to Cloudinary in its client-specific folder
     for (const file of uploadedFiles) {
@@ -418,7 +460,7 @@ export const uploadClientFiles = async (
         fileType: file.mimetype,
         fileSize: file.size,
         uploadedAt: new Date(),
-        uploadedBy: req.admin ? new Types.ObjectId(req.admin.id) : undefined,
+        uploadedBy: uploaderObjectId,
       };
 
       client.files.push(fileRecord);
