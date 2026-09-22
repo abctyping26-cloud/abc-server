@@ -15,11 +15,16 @@ import {
   claimEnquiry,
   unclaimEnquiry,
 } from "../controllers/enquiry.controller.js";
+import { getCloudUsageAnalytics } from "../controllers/analytics.controller.js";
+import { authenticateAdmin } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
 router.get("/ping", getAdminStatus);
 router.post("/auth/login", loginAdmin);
+
+// Cloud infrastructure and plan analytics (Cloudinary, MongoDB, Render)
+router.get("/analytics/cloud-usage", authenticateAdmin, getCloudUsageAnalytics);
 
 // Worker admin management routes (Direct MongoDB 'user-admin' collection)
 router.get("/workers", getWorkerAdmins);
