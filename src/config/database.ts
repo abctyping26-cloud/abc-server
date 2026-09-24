@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 import { config } from "./index.js";
 import { AdminUser } from "../models/adminUser.model.js";
 
+import { ensureServicesSeeded } from "../services/serviceSeed.service.js";
+
 /**
  * Ensures that the master admin account exists in 'user-admin' collection.
  */
@@ -45,6 +47,7 @@ export const connectDatabase = async (): Promise<void> => {
 
     await mongoose.connect(config.mongoUri);
     await ensureMasterAdmin();
+    await ensureServicesSeeded();
   } catch (error) {
     console.error("❌ Failed to connect to MongoDB:", error);
     // In production, you may want to exit process if DB is critical
