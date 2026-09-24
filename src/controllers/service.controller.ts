@@ -269,3 +269,91 @@ export const resetService = async (
     });
   }
 };
+
+/**
+ * POST /api/v1/admin/services
+ * Creates a new service in MongoDB database.
+ */
+export const createService = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { name, category, tagline, slug: customSlug, requiredDocuments } = req.body;
+
+    if (!name || typeof name !== "string" || !name.trim()) {
+      res.status(400).json({
+        success: false,
+        message: "Service name is required",
+      });
+      return;
+    }
+
+    const trimmedName = name.trim();
+    const generatedSlug = (customSlug && typeof customSlug === "string" && customSlug.trim())
+      ? customSlug.toLowerCase().trim().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-")
+      : trimmedName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
+
+    // Check if slug already exists
+    const existing = await Service.findOne({ slug: generatedSlug });
+    if (existing) {
+      res.status(400).json({
+        success: false,
+        message: `A service with slug '${generatedSlug}' already exists. Please choose a different name.`,
+      });
+      return;
+    }
+
+    // Determine category object
+    let categoryObj = {
+      id: "general",
+      name: "General Services",
+      shortName: "General",
+    };
+
+    if (category && typeof category === "object" && category.id) {
+      categoryObj = {
+        id: category.id || "general",
+        name: category.name || "General Services",
+        shortName: category.shortName || category.name || "General",
+      };
+    } else if (typeof category === "string" && category.trim()) {
+      categoryObj = {
+        id: category.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+        name: category.trim(),
+        shortName: category.trim(),
+      };
+    }
+
+    const highestOrderService = await Service.findOne().sort({ order: -1 });
+    const nextOrder = (highestOrderService?.order || 0) + 1;
+    const generatedServiceId = `SVC-${Date.now().toString().slice(-6)}`;
+
+    const newService = await Service.create({
+      slug: generatedSlug,
+      serviceId: generatedServiceId,
+      name: trimmedName,
+      category: categoryObj,
+      tagline: tagline && typeof tagline === "string" ? tagline.trim() : "",
+      requiredDocuments: Array.isArray(requiredDocuments) ? requiredDocuments : [],
+      faqs: [],
+      isCustomized: true,
+      order: nextOrder,
+      updatedBy: req.admin?.id ? req.admin.id : undefined,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Service created successfully in database",
+      data: {
+        service: newService,
+      },
+    });
+  } catch (error) {
+    console.error("Error creating service:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to create service in database",
+    });
+  }
+};

@@ -19,6 +19,7 @@ import { getCloudUsageAnalytics } from "../controllers/analytics.controller.js";
 import {
   getServices,
   getServiceBySlug,
+  createService,
   updateService,
   resetService,
 } from "../controllers/service.controller.js";
@@ -34,6 +35,7 @@ router.get("/analytics/cloud-usage", authenticateAdmin, getCloudUsageAnalytics);
 
 // Services and Required Documentation management routes
 router.get("/services", authenticateAdmin, getServices);
+router.post("/services", authenticateAdmin, createService);
 router.get("/services/:slug", authenticateAdmin, getServiceBySlug);
 router.put("/services/:slug", authenticateAdmin, updateService);
 router.post("/services/:slug/reset", authenticateAdmin, resetService);
