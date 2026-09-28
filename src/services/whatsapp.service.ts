@@ -350,6 +350,7 @@ export const processIncomingWebhook = async (body: any): Promise<void> => {
         try {
           await handleWhatsAppAutomation({
             senderPhone,
+            senderName,
             msgType,
             text,
             media: {

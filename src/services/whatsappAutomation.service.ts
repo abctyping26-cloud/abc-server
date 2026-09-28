@@ -1,5 +1,9 @@
 import { config } from "../config/index.js";
-import { CommercialUser, type IClientFile } from "../models/commercialUser.model.js";
+import {
+  CommercialUser,
+  type IClientFile,
+  type ICommercialUser,
+} from "../models/commercialUser.model.js";
 import { WhatsAppMessage } from "../models/whatsappMessage.model.js";
 import { WhatsAppSession } from "../models/whatsappSession.model.js";
 import { sendWhatsAppReply } from "./whatsapp.service.js";
@@ -38,6 +42,7 @@ export const sendBotReply = async (
 
 export interface WhatsAppAutomationInput {
   senderPhone: string;
+  senderName?: string;
   msgType: string;
   text: string;
   media?: {
@@ -49,13 +54,93 @@ export interface WhatsAppAutomationInput {
 }
 
 /**
- * Handles the session automation workflow:
- * - "." starts or ends a client creation session.
- * - Out-of-order phone numbers, names (N: Name), and media files are buffered
- *   and linked to the CommercialUser record.
+ * Automatically retrieves or creates a CommercialUser account for any WhatsApp sender.
+ * Generates a tracking PIN and attaches the WhatsApp profile name.
+ */
+export const getOrCreateClientForPhone = async (
+  cleanPhone: string,
+  senderName?: string
+): Promise<ICommercialUser> => {
+  const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+
+  let client = await CommercialUser.findOne({
+    $or: [
+      { phone: cleanPhone },
+      { phone: `+${cleanPhone}` },
+      { identifier: cleanPhone },
+      { phone: { $regex: last10 } },
+      { identifier: { $regex: last10 } },
+    ],
+  });
+
+  if (client) {
+    let modified = false;
+    // If client has a placeholder or empty name, and a valid WhatsApp profile name arrived, update it
+    if (
+      senderName &&
+      senderName.trim() &&
+      (!client.name || client.name.startsWith("WhatsApp Client"))
+    ) {
+      client.name = senderName.trim();
+      modified = true;
+    }
+    // Ensure client has a 4-digit PIN for tracking
+    if (!client.pin) {
+      client.pin = Math.floor(1000 + Math.random() * 9000).toString();
+      modified = true;
+    }
+    if (modified) {
+      await client.save();
+    }
+    return client;
+  }
+
+  // Generate 4-digit tracking PIN and resolve display name
+  const pin = Math.floor(1000 + Math.random() * 9000).toString();
+  const name =
+    senderName && senderName.trim()
+      ? senderName.trim()
+      : `WhatsApp Client (${cleanPhone.slice(-4)})`;
+
+  try {
+    client = await CommercialUser.create({
+      identifier: cleanPhone,
+      phone: `+${cleanPhone}`,
+      name,
+      pin,
+      source: "manual",
+      completed: false,
+      files: [],
+    });
+    console.log(
+      `✅ [Auto-Client] Automatically created client: "${client.name}" (${cleanPhone}) with PIN: ${pin}`
+    );
+    return client;
+  } catch (err: any) {
+    // Gracefully handle race condition if multiple webhook messages arrived simultaneously (E11000)
+    if (err.code === 11000) {
+      const existing = await CommercialUser.findOne({
+        $or: [
+          { identifier: cleanPhone },
+          { phone: cleanPhone },
+          { phone: `+${cleanPhone}` },
+        ],
+      });
+      if (existing) return existing;
+    }
+    throw err;
+  }
+};
+
+/**
+ * Handles automatic client creation, document attachment, and manual session workflow:
+ * - Automatically creates CommercialUser for any WhatsApp sender.
+ * - Automatically attaches any incoming photos, PDFs, or documents directly to the client's record.
+ * - Supports "." session toggle for worker admins managing client data.
  */
 export const handleWhatsAppAutomation = async ({
   senderPhone,
+  senderName,
   msgType,
   text,
   media,
@@ -64,7 +149,41 @@ export const handleWhatsAppAutomation = async ({
   const trimmedText = (text || "").trim();
   const isDot = trimmedText === ".";
 
-  // 1. Handle Dot (.) - Session Toggle
+  // 1. Always retrieve or auto-create the CommercialUser record for this WhatsApp sender
+  const client = await getOrCreateClientForPhone(cleanPhone, senderName);
+
+  // 2. Automatically store any documents / media files sent directly into the client's account
+  if (media && media.mediaUrl) {
+    const defaultName =
+      msgType === "image"
+        ? `photo_${Date.now()}.jpg`
+        : msgType === "video"
+        ? `video_${Date.now()}.mp4`
+        : `document_${Date.now()}`;
+
+    const fileName = media.mediaFileName || defaultName;
+
+    // Check if file is already linked (prevent duplicate pushes)
+    const alreadyLinked = client.files.some((f) => f.url === media.mediaUrl);
+    if (!alreadyLinked) {
+      const clientFile: IClientFile = {
+        public_id: `wa_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+        url: media.mediaUrl,
+        fileName,
+        fileType: media.mediaMimeType || "application/octet-stream",
+        fileSize: media.mediaFileSize || 0,
+        uploadedAt: new Date(),
+      };
+
+      client.files.push(clientFile);
+      await client.save();
+      console.log(
+        `📎 [Auto-Client] Saved document "${fileName}" to client "${client.name}" (${client._id}). Total files: ${client.files.length}`
+      );
+    }
+  }
+
+  // 3. Handle Dot (.) - Session Toggle (for worker admins managing client sessions)
   if (isDot) {
     let session = await WhatsAppSession.findOne({ senderPhone: cleanPhone });
     if (!session) {
@@ -74,7 +193,7 @@ export const handleWhatsAppAutomation = async ({
     if (!session.isActive) {
       // START NEW SESSION
       session.isActive = true;
-      session.clientId = null;
+      session.clientId = client._id;
       session.tempName = "";
       session.pendingFiles = [];
       await session.save();
@@ -87,19 +206,13 @@ export const handleWhatsAppAutomation = async ({
     } else {
       // CLOSE / RESET ACTIVE SESSION
       let summaryText = "";
-      if (session.clientId) {
-        const client = await CommercialUser.findById(session.clientId);
-        const name = client?.name || "Unnamed";
-        const phone = client?.phone || client?.identifier || "N/A";
-        const fileCount = client?.files?.length || 0;
-        summaryText = `🔴 *Session Closed*\n• Client: *${name}* (${phone})\n• Total Files: *${fileCount}*\n\nAll details and documents are saved in your dashboard.\nSend \`.\` to start a new client.`;
-      } else {
-        if (session.pendingFiles && session.pendingFiles.length > 0) {
-          summaryText = `🔴 *Session Closed*\n⚠️ ${session.pendingFiles.length} file(s) were received but no phone number was linked.\nSend \`.\` to start a new session.`;
-        } else {
-          summaryText = "🔴 *Session Closed*\nNo client was linked. Send `.` to start a new session.";
-        }
-      }
+      const currentClient = session.clientId
+        ? await CommercialUser.findById(session.clientId)
+        : client;
+      const name = currentClient?.name || "Unnamed";
+      const phone = currentClient?.phone || currentClient?.identifier || "N/A";
+      const fileCount = currentClient?.files?.length || 0;
+      summaryText = `🔴 *Session Closed*\n• Client: *${name}* (${phone})\n• Total Files: *${fileCount}*\n\nAll details and documents are saved in your dashboard.\nSend \`.\` to start a new client.`;
 
       session.isActive = false;
       session.clientId = null;
@@ -112,53 +225,15 @@ export const handleWhatsAppAutomation = async ({
     }
   }
 
-  // 2. Check if there is an active session
+  // 4. Check if there is an active session
   const session = await WhatsAppSession.findOne({
     senderPhone: cleanPhone,
     isActive: true,
   });
 
   if (!session) {
-    // No active automation session; normal message handling takes place
+    // No active manual session; automatic account creation & document saving already completed above!
     return;
-  }
-
-  // 3. Process Media Attachments (Photos, PDFs, Documents)
-  if (media && media.mediaUrl) {
-    const defaultName =
-      msgType === "image"
-        ? `photo_${Date.now()}.jpg`
-        : msgType === "video"
-        ? `video_${Date.now()}.mp4`
-        : `document_${Date.now()}`;
-
-    const clientFile: IClientFile = {
-      public_id: `wa_${Date.now()}_${Math.random().toString(36).substring(7)}`,
-      url: media.mediaUrl,
-      fileName: media.mediaFileName || defaultName,
-      fileType: media.mediaMimeType || "application/octet-stream",
-      fileSize: media.mediaFileSize || 0,
-      uploadedAt: new Date(),
-    };
-
-    if (session.clientId) {
-      const client = await CommercialUser.findById(session.clientId);
-      if (client) {
-        client.files.push(clientFile);
-        await client.save();
-        await sendBotReply(
-          cleanPhone,
-          `📎 File *${clientFile.fileName}* attached to *${client.name || client.phone}*.\nTotal files: ${client.files.length}`
-        );
-      }
-    } else {
-      session.pendingFiles.push(clientFile);
-      await session.save();
-      await sendBotReply(
-        cleanPhone,
-        `📎 File *${clientFile.fileName}* saved in session buffer.\n(It will be attached automatically once you send the client's phone number or name).`
-      );
-    }
   }
 
   // 4. Process Name Indicator ("N: Name" or "n: Name")
