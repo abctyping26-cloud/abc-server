@@ -57,12 +57,22 @@ export const createWorkerAdmin = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { identifier, password } = req.body;
+    const { name, phone } = req.body;
+    let { identifier, password } = req.body;
 
-    if (!identifier || !password) {
+    if (!identifier && name && typeof name === "string" && name.trim()) {
+      const cleanName = name.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      identifier = `${cleanName || "employee"}${Math.floor(100 + Math.random() * 900)}@abc.com`;
+    }
+
+    if (!password) {
+      password = "TempPassword@123";
+    }
+
+    if (!identifier || typeof identifier !== "string" || !identifier.trim()) {
       res.status(400).json({
         status: "fail",
-        message: "Admin email and temporary password are required",
+        message: "Admin email or employee name is required",
       });
       return;
     }
@@ -89,9 +99,9 @@ export const createWorkerAdmin = async (
       identifier: normalizedIdentifier,
       password: hashedPassword,
       role: "worker_admin",
-      name: "",
-      phone: "",
-      profileCompleted: false,
+      name: name ? String(name).trim() : "",
+      phone: phone ? String(phone).trim() : "",
+      profileCompleted: Boolean(name && String(name).trim()),
       isFirstLogin: true,
     });
 
@@ -106,7 +116,7 @@ export const createWorkerAdmin = async (
           phone: newWorker.phone || "",
           location: newWorker.location || "",
           role: newWorker.role,
-          profileCompleted: false,
+          profileCompleted: newWorker.profileCompleted,
           isFirstLogin: true,
           createdAt: newWorker.createdAt,
           lastLoginAt: newWorker.lastLoginAt,
