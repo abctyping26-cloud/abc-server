@@ -6,6 +6,7 @@ import {
   getServices,
   getServiceBySlug,
 } from "../controllers/service.controller.js";
+import { getTopMarqueeConfig } from "../controllers/websiteContent.controller.js";
 
 const router = Router();
 
@@ -19,6 +20,9 @@ router.post("/enquiries", createEnquiry);
 // Public services routes
 router.get("/services", getServices);
 router.get("/services/:slug", getServiceBySlug);
+
+// Public website content routes
+router.get("/website-content/top-marquee", getTopMarqueeConfig);
 
 export default router;
 

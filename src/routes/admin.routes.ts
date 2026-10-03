@@ -23,6 +23,11 @@ import {
   updateService,
   resetService,
 } from "../controllers/service.controller.js";
+import {
+  getTopMarqueeConfig,
+  updateTopMarqueeConfig,
+  resetTopMarqueeConfig,
+} from "../controllers/websiteContent.controller.js";
 import { authenticateAdmin } from "../middlewares/auth.middleware.js";
 
 const router = Router();
@@ -39,6 +44,11 @@ router.post("/services", authenticateAdmin, createService);
 router.get("/services/:slug", authenticateAdmin, getServiceBySlug);
 router.put("/services/:slug", authenticateAdmin, updateService);
 router.post("/services/:slug/reset", authenticateAdmin, resetService);
+
+// Website Content / Top Marquee management routes
+router.get("/website-content/top-marquee", authenticateAdmin, getTopMarqueeConfig);
+router.put("/website-content/top-marquee", authenticateAdmin, updateTopMarqueeConfig);
+router.post("/website-content/top-marquee/reset", authenticateAdmin, resetTopMarqueeConfig);
 
 // Worker admin management routes (Direct MongoDB 'user-admin' collection)
 router.get("/workers", getWorkerAdmins);

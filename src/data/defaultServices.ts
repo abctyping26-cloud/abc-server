@@ -70,6 +70,7 @@ export const CATEGORIES: ServiceCategory[] = [
       { id: "gp-6", name: "Tawteek Work (Tawtheeq)", isNew: true },
       { id: "gp-7", name: "ADNOC Registration" },
       { id: "gp-8", name: "Government Entity Approvals & NOCs" },
+      { id: "gp-9", name: "UAE Pass Assistance", isNew: true },
     ],
   },
   {
@@ -586,6 +587,22 @@ const TAILORED_SERVICES: Record<string, Partial<ServiceDetail>> = {
     ],
     faqs: [
       { question: "How long does a Civil Defense NOC take?", answer: "Following premises inspection and compliance clearance, approvals are typically granted within 3 to 7 business days." },
+    ],
+  },
+  "uae-pass-assistance": {
+    tagline: "Instant UAE Pass registration, kiosk biometrics upgrade, mobile number recovery, and qualified digital signature setup across Abu Dhabi.",
+    requiredDocuments: [
+      { title: "Original Emirates ID Card", description: "Mandatory for physical kiosk biometrics or NFC chip reading.", mandatory: true },
+      { title: "Active UAE Mobile SIM Card", description: "Registered in applicant's name to receive verification OTP codes.", mandatory: true },
+      { title: "Smartphone with Camera & NFC", description: "Compatible iOS or Android device running the official UAE Pass application.", mandatory: true },
+      { title: "Original Passport & Entry Permit (For Visitors / Foreign Investors)", description: "Required for overseas applicants without a residency visa.", mandatory: false },
+    ],
+    faqs: [
+      { question: "How do I update my UAE Pass phone number if my old SIM is cancelled or lost?", answer: "If you cannot receive OTPs on your old number, you must perform a secure identity reset using your original Emirates ID and biometric fingerprint at an official UAE Pass kiosk, or update your registered number via ICP federal portals. Our PRO team assists you directly through this process." },
+      { question: "What is the difference between a Basic and a Verified UAE Pass account?", answer: "A Basic account only provides limited access. A Verified account (with facial recognition or kiosk fingerprinting) unlocks a legally recognized Qualified Digital Signature, enabling you to sign court documents, renew commercial trade licenses on TAMM, and execute vehicle title transfers without visiting a notary public." },
+      { question: "Where are the nearest UAE Pass kiosks in Musaffah, Abu Dhabi?", answer: "Official kiosks are situated in key government and commercial hubs across Musaffah and Abu Dhabi, including TAMM Customer Happiness Centers, Mazyad Mall, Dalma Mall, and select police stations. Our team guides you to the nearest operating terminal and coordinates your biometrics verification." },
+      { question: "Can foreign investors and tourists register for UAE Pass?", answer: "Yes. Visitors and overseas business partners can activate UAE Pass using their foreign passport, entry permit number, and face biometrics, allowing them to access government portals, sign MOAs, and initiate business setup before arriving in the UAE." },
+      { question: "Why is TAMM or MOHRE rejecting my UAE Pass login?", answer: "Portals typically reject access when an account is unverified, when your Emirates ID has expired, or when your personal UAE Pass profile has not been linked to your commercial establishment card. We inspect your profile status and resolve the account linkage immediately." },
     ],
   },
 
