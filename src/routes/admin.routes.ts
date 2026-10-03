@@ -15,7 +15,10 @@ import {
   claimEnquiry,
   unclaimEnquiry,
 } from "../controllers/enquiry.controller.js";
-import { getCloudUsageAnalytics } from "../controllers/analytics.controller.js";
+import {
+  getCloudUsageAnalytics,
+  getWebTrafficAnalytics,
+} from "../controllers/analytics.controller.js";
 import {
   getServices,
   getServiceBySlug,
@@ -37,6 +40,9 @@ router.post("/auth/login", loginAdmin);
 
 // Cloud infrastructure and plan analytics (Cloudinary, MongoDB, Render)
 router.get("/analytics/cloud-usage", authenticateAdmin, getCloudUsageAnalytics);
+
+// Website visitor & traffic analytics (Google Analytics 4 API)
+router.get("/analytics/web-traffic", authenticateAdmin, getWebTrafficAnalytics);
 
 // Services and Required Documentation management routes
 router.get("/services", authenticateAdmin, getServices);

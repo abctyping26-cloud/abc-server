@@ -25,6 +25,11 @@ const whatsappBusinessAccountId =
 const whatsappVerifyToken =
   process.env.WHATSAPP_VERIFY_TOKEN || "abc_whatsapp_verify_token_secure";
 
+// Google Analytics 4 Configuration
+const gaPropertyId = process.env.GA_PROPERTY_ID || "557168604";
+const gaKeyFile = process.env.GA_KEY_FILE || "abc-analytics-510416-c1909bf0e532.json";
+const gaCredentialsJson = process.env.GA_CREDENTIALS_JSON || "";
+
 export const config = {
   port,
   nodeEnv,
@@ -43,6 +48,9 @@ export const config = {
   whatsappPhoneNumberId,
   whatsappBusinessAccountId,
   whatsappVerifyToken,
+  gaPropertyId,
+  gaKeyFile,
+  gaCredentialsJson,
   allowedOrigins: [clientUrl, adminUrl],
 };
 

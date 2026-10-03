@@ -9,3 +9,6 @@ yarn-error.log*
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+*analytics*.json
+*credentials*.json
+service-account*.json
