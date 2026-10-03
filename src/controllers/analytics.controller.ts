@@ -223,23 +223,40 @@ function getGAClient(): BetaAnalyticsDataClient | null {
   if (gaClient) return gaClient;
 
   try {
+    // 1. Check direct JSON string or Base64 encoded JSON in environment variable
     if (config.gaCredentialsJson) {
-      const credentials = JSON.parse(config.gaCredentialsJson);
-      gaClient = new BetaAnalyticsDataClient({ credentials });
-      return gaClient;
+      try {
+        const credentials = JSON.parse(config.gaCredentialsJson);
+        gaClient = new BetaAnalyticsDataClient({ credentials });
+        return gaClient;
+      } catch {
+        try {
+          const decoded = Buffer.from(config.gaCredentialsJson, "base64").toString("utf-8");
+          const credentials = JSON.parse(decoded);
+          gaClient = new BetaAnalyticsDataClient({ credentials });
+          return gaClient;
+        } catch (e: any) {
+          console.error("Failed to parse GA_CREDENTIALS_JSON:", e?.message);
+        }
+      }
     }
 
-    if (config.gaKeyFile) {
-      let resolvedPath = path.isAbsolute(config.gaKeyFile)
-        ? config.gaKeyFile
-        : path.resolve(process.cwd(), config.gaKeyFile);
+    // 2. Check candidate file paths (Local workspace, Render /etc/secrets, cwd)
+    const keyFileName = config.gaKeyFile || "abc-analytics-510416-c1909bf0e532.json";
+    const candidatePaths = [
+      keyFileName,
+      path.resolve(process.cwd(), keyFileName),
+      path.resolve(process.cwd(), "server", keyFileName),
+      path.resolve(process.cwd(), "..", "server", keyFileName),
+      path.join("/etc/secrets", keyFileName),
+      "/etc/secrets/google-credentials.json",
+      "/etc/secrets/service-account.json",
+      "/etc/secrets/abc-analytics-510416-c1909bf0e532.json",
+    ];
 
-      if (!fs.existsSync(resolvedPath)) {
-        resolvedPath = path.resolve(process.cwd(), "server", config.gaKeyFile);
-      }
-
-      if (fs.existsSync(resolvedPath)) {
-        gaClient = new BetaAnalyticsDataClient({ keyFilename: resolvedPath });
+    for (const candidate of candidatePaths) {
+      if (candidate && fs.existsSync(candidate)) {
+        gaClient = new BetaAnalyticsDataClient({ keyFilename: candidate });
         return gaClient;
       }
     }
