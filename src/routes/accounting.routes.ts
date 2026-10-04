@@ -13,6 +13,12 @@ import {
   getInvoices,
   getInvoiceById,
   deleteInvoice,
+  getIncomes,
+  createIncome,
+  deleteIncome,
+  getExpenses,
+  createExpense,
+  deleteExpense,
 } from "../controllers/accounting.controller.js";
 
 const router = Router();
@@ -37,5 +43,15 @@ router.delete("/personnel/:id", deletePersonnel);
 router.get("/banks", getBanks);
 router.post("/banks", createBank);
 router.delete("/banks/:id", deleteBank);
+
+// Income Management (MongoDB: accounting-incomes)
+router.get("/incomes", getIncomes);
+router.post("/incomes", createIncome);
+router.delete("/incomes/:id", deleteIncome);
+
+// Expense Management (MongoDB: accounting-expenses)
+router.get("/expenses", getExpenses);
+router.post("/expenses", createExpense);
+router.delete("/expenses/:id", deleteExpense);
 
 export default router;

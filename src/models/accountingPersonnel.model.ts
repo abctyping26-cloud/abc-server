@@ -7,6 +7,10 @@ export interface IAccountingPersonnel extends Document {
   name: string;
   phone?: string;
   code?: string;
+  email?: string;
+  address?: string;
+  category?: string;
+  notes?: string;
   status: "active" | "inactive";
   createdBy?: Types.ObjectId;
   createdAt: Date;
@@ -33,6 +37,26 @@ const accountingPersonnelSchema = new Schema<IAccountingPersonnel>(
       default: "",
     },
     code: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    email: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    address: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    category: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    notes: {
       type: String,
       trim: true,
       default: "",

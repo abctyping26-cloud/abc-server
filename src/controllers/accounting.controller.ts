@@ -3,6 +3,8 @@ import { InvoiceSequence } from "../models/invoiceSequence.model.js";
 import { AccountingPersonnel, type PersonnelType } from "../models/accountingPersonnel.model.js";
 import { AccountingBank } from "../models/accountingBank.model.js";
 import { AccountingInvoice } from "../models/invoice.model.js";
+import { AccountingIncome } from "../models/accountingIncome.model.js";
+import { AccountingExpense } from "../models/accountingExpense.model.js";
 
 /**
  * Format a number as zero-padded string (e.g. 0 -> "0000", 1 -> "0001")
@@ -151,6 +153,10 @@ export const getPersonnel = async (
           name: p.name,
           phone: p.phone || "",
           code: p.code || "",
+          email: p.email || "",
+          address: p.address || "",
+          category: p.category || "",
+          notes: p.notes || "",
           status: p.status,
           createdBy: p.createdBy || null,
           createdAt: p.createdAt,
@@ -164,7 +170,7 @@ export const getPersonnel = async (
 };
 
 /**
- * Create Personnel (Salesman, Referrer, or Division) directly in MongoDB
+ * Create Personnel (Salesman, Referrer, Division, or Supplier) directly in MongoDB
  */
 export const createPersonnel = async (
   req: Request,
@@ -172,7 +178,16 @@ export const createPersonnel = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { type, name, phone = "", code = "" } = req.body;
+    const {
+      type,
+      name,
+      phone = "",
+      code = "",
+      email = "",
+      address = "",
+      category = "",
+      notes = "",
+    } = req.body;
 
     if (!type || !["salesman", "referrer", "division", "supplier"].includes(type)) {
       res.status(400).json({
@@ -195,6 +210,10 @@ export const createPersonnel = async (
       name: name.trim(),
       phone: String(phone).trim(),
       code: String(code).trim(),
+      email: String(email).trim(),
+      address: String(address).trim(),
+      category: String(category).trim(),
+      notes: String(notes).trim(),
       status: "active",
     });
 
@@ -209,6 +228,10 @@ export const createPersonnel = async (
           name: item.name,
           phone: item.phone,
           code: item.code,
+          email: item.email,
+          address: item.address,
+          category: item.category,
+          notes: item.notes,
           status: item.status,
           createdAt: item.createdAt,
           updatedAt: item.updatedAt,
@@ -672,4 +695,268 @@ export const deleteInvoice = async (
     next(error);
   }
 };
+
+/**
+ * ============================================================================
+ * INCOMES CONTROLLERS (MongoDB: accounting-incomes)
+ * ============================================================================
+ */
+export const getIncomes = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const filter: Record<string, any> = {};
+
+    if (req.query.type && typeof req.query.type === "string" && req.query.type !== "all") {
+      filter.type = req.query.type;
+    }
+
+    if (req.query.payMode && typeof req.query.payMode === "string" && req.query.payMode !== "all") {
+      filter.payMode = req.query.payMode;
+    }
+
+    if (req.query.search && typeof req.query.search === "string") {
+      const q = req.query.search.trim();
+      const regex = new RegExp(q, "i");
+      filter.$or = [{ incomeId: regex }, { type: regex }, { description: regex }, { division: regex }];
+    }
+
+    const items = await AccountingIncome.find(filter).sort({ incomeDate: -1, createdAt: -1 });
+
+    res.status(200).json({
+      status: "success",
+      count: items.length,
+      data: {
+        incomes: items.map((inc) => ({
+          id: inc._id.toString(),
+          _id: inc._id.toString(),
+          incomeId: inc.incomeId,
+          incomeDate: inc.incomeDate,
+          type: inc.type,
+          description: inc.description,
+          amount: inc.amount,
+          payMode: inc.payMode,
+          bank: inc.bank,
+          division: inc.division,
+          status: inc.status,
+          createdAt: inc.createdAt,
+          updatedAt: inc.updatedAt,
+        })),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createIncome = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const {
+      incomeId,
+      incomeDate,
+      type,
+      description = "",
+      amount,
+      payMode = "cash",
+      bank = "",
+      division = "",
+    } = req.body;
+
+    if (!type || !String(type).trim()) {
+      res.status(400).json({ status: "fail", message: "Income type is required." });
+      return;
+    }
+
+    const numAmount = Number(amount) || 0;
+    const finalId = incomeId?.trim() || `IN/${Math.floor(10 + Math.random() * 900)}`;
+
+    const newIncome = await AccountingIncome.create({
+      incomeId: finalId,
+      incomeDate: incomeDate ? new Date(incomeDate) : new Date(),
+      type: String(type).trim(),
+      description: String(description).trim(),
+      amount: numAmount,
+      payMode: payMode === "bank" ? "bank" : "cash",
+      bank: String(bank).trim(),
+      division: String(division).trim(),
+      status: "received",
+    });
+
+    res.status(201).json({
+      status: "success",
+      message: `Income #${newIncome.incomeId} recorded successfully in MongoDB.`,
+      data: { income: newIncome },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteIncome = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const deleted = await AccountingIncome.findByIdAndDelete(id);
+
+    if (!deleted) {
+      res.status(404).json({ status: "fail", message: "Income record not found." });
+      return;
+    }
+
+    res.status(200).json({
+      status: "success",
+      message: `Income #${deleted.incomeId} deleted successfully from MongoDB.`,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * ============================================================================
+ * EXPENSES CONTROLLERS (MongoDB: accounting-expenses)
+ * ============================================================================
+ */
+export const getExpenses = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const filter: Record<string, any> = {};
+
+    if (req.query.type && typeof req.query.type === "string" && req.query.type !== "all") {
+      filter.type = req.query.type;
+    }
+
+    if (req.query.status && typeof req.query.status === "string" && req.query.status !== "all") {
+      filter.status = req.query.status;
+    }
+
+    if (req.query.search && typeof req.query.search === "string") {
+      const q = req.query.search.trim();
+      const regex = new RegExp(q, "i");
+      filter.$or = [
+        { expenseId: regex },
+        { supplierName: regex },
+        { type: regex },
+        { subType: regex },
+        { description: regex },
+      ];
+    }
+
+    const items = await AccountingExpense.find(filter).sort({ expenseDate: -1, createdAt: -1 });
+
+    res.status(200).json({
+      status: "success",
+      count: items.length,
+      data: {
+        expenses: items.map((exp) => ({
+          id: exp._id.toString(),
+          _id: exp._id.toString(),
+          expenseId: exp.expenseId,
+          expenseDate: exp.expenseDate,
+          supplierName: exp.supplierName,
+          type: exp.type,
+          subType: exp.subType,
+          description: exp.description,
+          amount: exp.amount,
+          payMode: exp.payMode,
+          bank: exp.bank,
+          status: exp.status,
+          division: exp.division,
+          createdAt: exp.createdAt,
+          updatedAt: exp.updatedAt,
+        })),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createExpense = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const {
+      expenseId,
+      expenseDate,
+      supplierName = "",
+      type,
+      subType = "",
+      description = "",
+      amount,
+      payMode = "cash",
+      bank = "",
+      status = "Paid",
+      division = "",
+    } = req.body;
+
+    if (!type || !String(type).trim()) {
+      res.status(400).json({ status: "fail", message: "Expense type is required." });
+      return;
+    }
+
+    const numAmount = Number(amount) || 0;
+    const finalId = expenseId?.trim() || `EX/${Math.floor(100 + Math.random() * 900)}`;
+
+    const newExpense = await AccountingExpense.create({
+      expenseId: finalId,
+      expenseDate: expenseDate ? new Date(expenseDate) : new Date(),
+      supplierName: String(supplierName).trim(),
+      type: String(type).trim(),
+      subType: String(subType).trim(),
+      description: String(description).trim(),
+      amount: numAmount,
+      payMode: payMode === "bank" ? "bank" : "cash",
+      bank: String(bank).trim(),
+      status: status === "Unpaid" ? "Unpaid" : status === "Partial" ? "Partial" : "Paid",
+      division: String(division).trim(),
+    });
+
+    res.status(201).json({
+      status: "success",
+      message: `Expense #${newExpense.expenseId} recorded successfully in MongoDB.`,
+      data: { expense: newExpense },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteExpense = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const deleted = await AccountingExpense.findByIdAndDelete(id);
+
+    if (!deleted) {
+      res.status(404).json({ status: "fail", message: "Expense record not found." });
+      return;
+    }
+
+    res.status(200).json({
+      status: "success",
+      message: `Expense #${deleted.expenseId} deleted successfully from MongoDB.`,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 
