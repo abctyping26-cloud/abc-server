@@ -4,6 +4,7 @@ import {
   getWorkerAdmins,
   createWorkerAdmin,
   updateWorkerAdminProfile,
+  updateWorkerAdminPermissions,
   deleteWorkerAdmin,
 } from "../controllers/admin.controller.js";
 import { loginAdmin } from "../controllers/auth.controller.js";
@@ -31,7 +32,10 @@ import {
   updateTopMarqueeConfig,
   resetTopMarqueeConfig,
 } from "../controllers/websiteContent.controller.js";
-import { authenticateAdmin } from "../middlewares/auth.middleware.js";
+import {
+  authenticateAdmin,
+  requireDeletePermission,
+} from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
@@ -60,7 +64,8 @@ router.post("/website-content/top-marquee/reset", authenticateAdmin, resetTopMar
 router.get("/workers", getWorkerAdmins);
 router.post("/workers", createWorkerAdmin);
 router.patch("/workers/:id/profile", updateWorkerAdminProfile);
-router.delete("/workers/:id", deleteWorkerAdmin);
+router.patch("/workers/:id/permissions", authenticateAdmin, updateWorkerAdminPermissions);
+router.delete("/workers/:id", authenticateAdmin, deleteWorkerAdmin);
 
 // Admin enquiry management routes
 router.get("/enquiries", getEnquiries);
@@ -68,7 +73,7 @@ router.patch("/enquiries/:id/claim", claimEnquiry);
 router.patch("/enquiries/:id/unclaim", unclaimEnquiry);
 router.patch("/enquiries/:id/respond", markEnquiryResponded);
 router.post("/enquiries/:id/reply", replyToEnquiry);
-router.delete("/enquiries/:id", deleteEnquiry);
+router.delete("/enquiries/:id", authenticateAdmin, requireDeletePermission, deleteEnquiry);
 
 export default router;
 

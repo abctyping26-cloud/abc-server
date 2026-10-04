@@ -20,6 +20,10 @@ import {
   createExpense,
   deleteExpense,
 } from "../controllers/accounting.controller.js";
+import {
+  authenticateAdmin,
+  requireDeletePermission,
+} from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
@@ -27,7 +31,7 @@ const router = Router();
 router.get("/invoices", getInvoices);
 router.post("/invoices", createInvoice);
 router.get("/invoices/:id", getInvoiceById);
-router.delete("/invoices/:id", deleteInvoice);
+router.delete("/invoices/:id", authenticateAdmin, requireDeletePermission, deleteInvoice);
 
 // Invoice Sequence Counter
 router.get("/invoice-sequence", getInvoiceSequence);
@@ -37,21 +41,21 @@ router.post("/invoice-sequence/reset", resetInvoiceSequence);
 // Personnel Management (Salesmen, Referrers, Divisions, Suppliers)
 router.get("/personnel", getPersonnel);
 router.post("/personnel", createPersonnel);
-router.delete("/personnel/:id", deletePersonnel);
+router.delete("/personnel/:id", authenticateAdmin, requireDeletePermission, deletePersonnel);
 
 // Bank Accounts Management
 router.get("/banks", getBanks);
 router.post("/banks", createBank);
-router.delete("/banks/:id", deleteBank);
+router.delete("/banks/:id", authenticateAdmin, requireDeletePermission, deleteBank);
 
 // Income Management (MongoDB: accounting-incomes)
 router.get("/incomes", getIncomes);
 router.post("/incomes", createIncome);
-router.delete("/incomes/:id", deleteIncome);
+router.delete("/incomes/:id", authenticateAdmin, requireDeletePermission, deleteIncome);
 
 // Expense Management (MongoDB: accounting-expenses)
 router.get("/expenses", getExpenses);
 router.post("/expenses", createExpense);
-router.delete("/expenses/:id", deleteExpense);
+router.delete("/expenses/:id", authenticateAdmin, requireDeletePermission, deleteExpense);
 
 export default router;

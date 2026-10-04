@@ -203,11 +203,21 @@ export const loginAdmin = async (
     if (clientIp) admin.ipAddress = clientIp;
     await admin.save();
 
+    const isMaster = admin.role === "master_admin" || admin.role === "superadmin";
+    const assignedRoles = isMaster
+      ? ["accounting", "enquiries", "whatsapp_enquiries", "clients", "website_edit", "analytics", "overview"]
+      : (admin.assignedRoles && admin.assignedRoles.length > 0
+          ? admin.assignedRoles
+          : ["accounting", "enquiries", "whatsapp_enquiries", "clients"]);
+    const canDeleteData = isMaster ? true : Boolean(admin.canDeleteData);
+
     const token = generateToken({
       id: admin._id,
       identifier: admin.identifier,
       role: admin.role,
       type: "admin",
+      assignedRoles,
+      canDeleteData,
     });
 
     res.status(200).json({
@@ -222,6 +232,8 @@ export const loginAdmin = async (
           phone: admin.phone || "",
           location: admin.location || "",
           deviceInfo: admin.deviceInfo || "",
+          assignedRoles,
+          canDeleteData,
           isFirstLogin: admin.isFirstLogin ?? (admin.role !== "master_admin"),
           profileCompleted:
             admin.profileCompleted ?? (admin.role === "master_admin"),

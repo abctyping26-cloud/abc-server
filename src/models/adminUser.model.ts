@@ -12,6 +12,8 @@ export interface IAdminUser extends Document {
   isFirstLogin?: boolean;
   profileCompleted?: boolean;
   lastLoginAt?: Date;
+  assignedRoles?: string[];
+  canDeleteData?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -60,6 +62,14 @@ const adminUserSchema = new Schema<IAdminUser>(
       default: true,
     },
     profileCompleted: {
+      type: Boolean,
+      default: false,
+    },
+    assignedRoles: {
+      type: [String],
+      default: ["accounting", "enquiries", "whatsapp_enquiries", "clients"],
+    },
+    canDeleteData: {
       type: Boolean,
       default: false,
     },
