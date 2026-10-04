@@ -5,6 +5,7 @@ import {
   resetInvoiceSequence,
   getPersonnel,
   createPersonnel,
+  updatePersonnel,
   deletePersonnel,
   getBanks,
   createBank,
@@ -41,6 +42,8 @@ router.post("/invoice-sequence/reset", resetInvoiceSequence);
 // Personnel Management (Salesmen, Referrers, Divisions, Suppliers)
 router.get("/personnel", getPersonnel);
 router.post("/personnel", createPersonnel);
+router.patch("/personnel/:id", updatePersonnel);
+router.put("/personnel/:id", updatePersonnel);
 router.delete("/personnel/:id", authenticateAdmin, requireDeletePermission, deletePersonnel);
 
 // Bank Accounts Management

@@ -244,6 +244,66 @@ export const createPersonnel = async (
 };
 
 /**
+ * Update Personnel by ID in MongoDB
+ */
+export const updatePersonnel = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { name, phone, code, email, address, category, notes, status } = req.body;
+
+    const updateData: Record<string, any> = {};
+    if (name !== undefined) updateData.name = String(name).trim();
+    if (phone !== undefined) updateData.phone = String(phone).trim();
+    if (code !== undefined) updateData.code = String(code).trim();
+    if (email !== undefined) updateData.email = String(email).trim();
+    if (address !== undefined) updateData.address = String(address).trim();
+    if (category !== undefined) updateData.category = String(category).trim();
+    if (notes !== undefined) updateData.notes = String(notes).trim();
+    if (status !== undefined) updateData.status = status;
+
+    const item = await AccountingPersonnel.findByIdAndUpdate(id, updateData, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!item) {
+      res.status(404).json({
+        status: "fail",
+        message: "Personnel record not found.",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        item: {
+          id: item._id.toString(),
+          _id: item._id.toString(),
+          type: item.type,
+          name: item.name,
+          phone: item.phone,
+          code: item.code,
+          email: item.email,
+          address: item.address,
+          category: item.category,
+          notes: item.notes,
+          status: item.status,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Delete Personnel by ID from MongoDB
  */
 export const deletePersonnel = async (
