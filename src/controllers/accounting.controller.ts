@@ -5,6 +5,7 @@ import { AccountingBank } from "../models/accountingBank.model.js";
 import { AccountingInvoice } from "../models/invoice.model.js";
 import { AccountingIncome } from "../models/accountingIncome.model.js";
 import { AccountingExpense } from "../models/accountingExpense.model.js";
+import { AccountingBankTransaction } from "../models/accountingBankTransaction.model.js";
 
 /**
  * Format a number as zero-padded string (e.g. 0 -> "0000", 1 -> "0001")
@@ -1018,5 +1019,293 @@ export const deleteExpense = async (
     next(error);
   }
 };
+
+/**
+ * ============================================================================
+ * BANK TRANSACTIONS CONTROLLERS (MongoDB: accounting-bank-transactions)
+ * ============================================================================
+ */
+
+export const createBankTransaction = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const {
+      txType,
+      txDate,
+      bankName,
+      toBank = "",
+      amount,
+      paymentType = "Cash",
+      description = "",
+    } = req.body;
+
+    if (!txType || !["Deposit", "Withdrawel", "Bank To Bank"].includes(txType)) {
+      res.status(400).json({
+        status: "fail",
+        message: "Valid txType is required (Deposit, Withdrawel, Bank To Bank).",
+      });
+      return;
+    }
+
+    if (!bankName || !String(bankName).trim() || bankName === "-Select One-") {
+      res.status(400).json({ status: "fail", message: "Bank Name is required." });
+      return;
+    }
+
+    if (txType === "Bank To Bank" && (!toBank || !String(toBank).trim() || toBank === "-Select One-")) {
+      res.status(400).json({
+        status: "fail",
+        message: "Destination bank (toBank) is required for Bank To Bank transfers.",
+      });
+      return;
+    }
+
+    const numAmount = Number(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      res.status(400).json({ status: "fail", message: "Amount must be greater than 0." });
+      return;
+    }
+
+    const newTx = await AccountingBankTransaction.create({
+      txType,
+      txDate: txDate ? new Date(txDate) : new Date(),
+      bankName: String(bankName).trim(),
+      toBank: String(toBank).trim(),
+      amount: numAmount,
+      paymentType: paymentType === "Cheque" ? "Cheque" : "Cash",
+      description: String(description).trim(),
+      createdBy: (req as any).user?._id || (req as any).user?.id || null,
+    });
+
+    res.status(201).json({
+      status: "success",
+      message: `Bank Transaction (${txType}) of ${numAmount} recorded successfully in MongoDB.`,
+      data: { transaction: newTx },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getBankTransactions = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { bankName } = req.query;
+
+    if (!bankName || typeof bankName !== "string" || !bankName.trim()) {
+      const directTxs = await AccountingBankTransaction.find().sort({ txDate: -1, createdAt: -1 });
+      res.status(200).json({
+        status: "success",
+        count: directTxs.length,
+        data: { transactions: directTxs },
+      });
+      return;
+    }
+
+    const targetBank = bankName.trim();
+    const regex = new RegExp(`^${targetBank.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
+
+    // 1. Get bank record to find opening balance
+    const bankDoc = await AccountingBank.findOne({ bankName: regex });
+    const openingBalance = Number(bankDoc?.openingBalance || 0);
+
+    // 2. Direct bank transactions
+    const directTxs = await AccountingBankTransaction.find({
+      $or: [{ bankName: regex }, { toBank: regex }],
+    });
+
+    // 3. Incomes
+    const incomes = await AccountingIncome.find({ bank: regex });
+
+    // 4. Expenses
+    const expenses = await AccountingExpense.find({ bank: regex });
+
+    // 5. Invoices
+    const invoices = await AccountingInvoice.find({
+      $or: [{ bank: regex }, { bankC: regex }],
+    });
+
+    interface UnifiedTx {
+      id: string;
+      date: Date;
+      type: string;
+      category: "income" | "expense" | "transfer" | "deposit" | "withdrawal" | "invoice";
+      reference: string;
+      description: string;
+      paymentType: string;
+      debit: number;
+      credit: number;
+      runningBalance: number;
+    }
+
+    const allItems: UnifiedTx[] = [];
+
+    // Map Direct Transactions
+    for (const dt of directTxs) {
+      const isSource = dt.bankName.toLowerCase() === targetBank.toLowerCase();
+      const isDest = dt.toBank && dt.toBank.toLowerCase() === targetBank.toLowerCase();
+
+      if (dt.txType === "Deposit") {
+        allItems.push({
+          id: dt._id.toString(),
+          date: dt.txDate || dt.createdAt,
+          type: "Bank Deposit",
+          category: "deposit",
+          reference: "DEP-" + dt._id.toString().slice(-4).toUpperCase(),
+          description: dt.description || "Cash/Cheque Deposit",
+          paymentType: dt.paymentType || "Cash",
+          debit: 0,
+          credit: dt.amount,
+          runningBalance: 0,
+        });
+      } else if (dt.txType === "Withdrawel") {
+        allItems.push({
+          id: dt._id.toString(),
+          date: dt.txDate || dt.createdAt,
+          type: "Bank Withdrawal",
+          category: "withdrawal",
+          reference: "WTH-" + dt._id.toString().slice(-4).toUpperCase(),
+          description: dt.description || "Bank Withdrawal",
+          paymentType: dt.paymentType || "Cash",
+          debit: dt.amount,
+          credit: 0,
+          runningBalance: 0,
+        });
+      } else if (dt.txType === "Bank To Bank") {
+        if (isSource) {
+          allItems.push({
+            id: dt._id.toString() + "-out",
+            date: dt.txDate || dt.createdAt,
+            type: "Transfer Out",
+            category: "transfer",
+            reference: "TRF-" + dt._id.toString().slice(-4).toUpperCase(),
+            description: `Transfer to ${dt.toBank}${dt.description ? ` (${dt.description})` : ""}`,
+            paymentType: dt.paymentType || "Cash",
+            debit: dt.amount,
+            credit: 0,
+            runningBalance: 0,
+          });
+        }
+        if (isDest) {
+          allItems.push({
+            id: dt._id.toString() + "-in",
+            date: dt.txDate || dt.createdAt,
+            type: "Transfer In",
+            category: "transfer",
+            reference: "TRF-" + dt._id.toString().slice(-4).toUpperCase(),
+            description: `Transfer from ${dt.bankName}${dt.description ? ` (${dt.description})` : ""}`,
+            paymentType: dt.paymentType || "Cash",
+            debit: 0,
+            credit: dt.amount,
+            runningBalance: 0,
+          });
+        }
+      }
+    }
+
+    // Map Incomes
+    for (const inc of incomes) {
+      allItems.push({
+        id: inc._id.toString(),
+        date: inc.incomeDate || inc.createdAt,
+        type: `Income (${inc.type})`,
+        category: "income",
+        reference: inc.incomeId,
+        description: inc.description || inc.type,
+        paymentType: inc.payMode,
+        debit: 0,
+        credit: inc.amount,
+        runningBalance: 0,
+      });
+    }
+
+    // Map Expenses
+    for (const exp of expenses) {
+      allItems.push({
+        id: exp._id.toString(),
+        date: exp.expenseDate || exp.createdAt,
+        type: `Expense (${exp.type})`,
+        category: "expense",
+        reference: exp.expenseId,
+        description: exp.supplierName
+          ? `${exp.supplierName} - ${exp.description || exp.type}`
+          : exp.description || exp.type,
+        paymentType: exp.payMode,
+        debit: exp.amount,
+        credit: 0,
+        runningBalance: 0,
+      });
+    }
+
+    // Map Invoices (paid invoices)
+    for (const inv of invoices) {
+      const isBankMatch = inv.bank && inv.bank.toLowerCase() === targetBank.toLowerCase();
+      const isBankCMatch = inv.bankC && inv.bankC.toLowerCase() === targetBank.toLowerCase();
+      if (isBankMatch || isBankCMatch) {
+        const amt = Number(inv.financialSummary?.paid || inv.financialSummary?.grossAmount || inv.financialSummary?.total || 0);
+        if (amt > 0) {
+          allItems.push({
+            id: inv._id.toString(),
+            date: inv.invoiceDate ? new Date(inv.invoiceDate) : inv.createdAt,
+            type: "Customer Invoice",
+            category: "invoice",
+            reference: inv.invoiceNo ? `#${inv.invoiceNo}` : "INV",
+            description: inv.customer?.name ? `Invoice Payment - ${inv.customer.name}` : "Invoice Payment",
+            paymentType: "Bank",
+            debit: 0,
+            credit: amt,
+            runningBalance: 0,
+          });
+        }
+      }
+    }
+
+    // Sort chronologically ascending to compute accurate running balance
+    allItems.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    let running = openingBalance;
+    let totalCredit = 0;
+    let totalDebit = 0;
+
+    for (const item of allItems) {
+      running = running + item.credit - item.debit;
+      item.runningBalance = running;
+      totalCredit += item.credit;
+      totalDebit += item.debit;
+    }
+
+    // Reverse to show newest transactions first
+    const transactionsDesc = [...allItems].reverse();
+
+    res.status(200).json({
+      status: "success",
+      count: transactionsDesc.length,
+      data: {
+        bank: {
+          bankName: bankDoc?.bankName || targetBank,
+          accountName: bankDoc?.accountName || "",
+          accountNumber: bankDoc?.accountNumber || "",
+          iban: bankDoc?.iban || "",
+          swiftCode: bankDoc?.swiftCode || "",
+          currency: bankDoc?.currency || "AED",
+          openingBalance,
+          totalCredit,
+          totalDebit,
+          currentBalance: running,
+        },
+        transactions: transactionsDesc,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 
 

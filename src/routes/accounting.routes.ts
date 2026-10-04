@@ -10,6 +10,8 @@ import {
   getBanks,
   createBank,
   deleteBank,
+  getBankTransactions,
+  createBankTransaction,
   createInvoice,
   getInvoices,
   getInvoiceById,
@@ -50,6 +52,8 @@ router.delete("/personnel/:id", authenticateAdmin, requireDeletePermission, dele
 router.get("/banks", getBanks);
 router.post("/banks", createBank);
 router.delete("/banks/:id", authenticateAdmin, requireDeletePermission, deleteBank);
+router.get("/bank-transactions", getBankTransactions);
+router.post("/bank-transactions", createBankTransaction);
 
 // Income Management (MongoDB: accounting-incomes)
 router.get("/incomes", getIncomes);
