@@ -6,6 +6,7 @@ import clientAdminRoutes from "./clientAdmin.routes.js";
 import accountingRoutes from "./accounting.routes.js";
 import testRoutes from "./test.routes.js";
 import whatsappRoutes from "./whatsapp.routes.js";
+import noteRoutes from "./note.routes.js";
 
 const apiRouter = Router();
 
@@ -13,6 +14,7 @@ apiRouter.use("/health", healthRoutes);
 apiRouter.use("/client", clientRoutes);
 apiRouter.use("/admin/clients", clientAdminRoutes);
 apiRouter.use("/admin/accounting", accountingRoutes);
+apiRouter.use("/admin/notes", noteRoutes);
 apiRouter.use("/admin", adminRoutes);
 apiRouter.use("/test", testRoutes);
 apiRouter.use("/whatsapp", whatsappRoutes);
