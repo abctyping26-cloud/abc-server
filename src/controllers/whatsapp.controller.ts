@@ -13,6 +13,7 @@ import { Enquiry } from "../models/enquiry.model.js";
 import {
   processIncomingWebhook,
   sendWhatsAppReply,
+  sendWhatsAppTemplate,
 } from "../services/whatsapp.service.js";
 
 /**
@@ -297,20 +298,33 @@ export const sendReply = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { customerPhone, text } = req.body;
+    const { customerPhone, text, templateName, languageCode } = req.body;
 
-    if (!customerPhone || !text || !text.trim()) {
+    if (!customerPhone || (!text?.trim() && !templateName)) {
       res.status(400).json({
         success: false,
-        message: "Both customerPhone and non-empty text message are required.",
+        message: "Customer phone and message text or templateName are required.",
       });
       return;
     }
 
     const cleanPhone = customerPhone.replace(/\D/g, "");
 
-    // Send via Meta Cloud API
-    const result = await sendWhatsAppReply(cleanPhone, text.trim());
+    let result: { messageId: string; rawResponse: unknown };
+    let messageType = "text";
+    let messageText = (text || "").trim();
+
+    if (templateName) {
+      // Send via Meta Cloud API as an approved template message
+      result = await sendWhatsAppTemplate(cleanPhone, templateName, languageCode || "en");
+      messageType = "template";
+      if (!messageText) {
+        messageText = `[Template: ${templateName}]`;
+      }
+    } else {
+      // Send via Meta Cloud API as a standard text reply
+      result = await sendWhatsAppReply(cleanPhone, messageText);
+    }
 
     // Persist outgoing message in MongoDB
     const newMessage = await WhatsAppMessage.create({
@@ -318,8 +332,8 @@ export const sendReply = async (
       customerPhone: cleanPhone,
       businessPhoneNumberId: config.whatsappPhoneNumberId,
       direction: "outgoing",
-      type: "text",
-      text: text.trim(),
+      type: messageType,
+      text: messageText,
       status: "sent",
       rawPayload: result.rawResponse as Record<string, unknown>,
       timestamp: new Date(),

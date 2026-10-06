@@ -173,6 +173,64 @@ export const sendWhatsAppReply = async (
 };
 
 /**
+ * Send an outbound template message to a customer via Meta WhatsApp Cloud API
+ */
+export const sendWhatsAppTemplate = async (
+  recipientPhone: string,
+  templateName: string,
+  languageCode: string = "en"
+): Promise<{ messageId: string; rawResponse: unknown }> => {
+  if (!config.whatsappToken || !config.whatsappPhoneNumberId) {
+    throw new Error(
+      "WhatsApp credentials (WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID) are missing."
+    );
+  }
+
+  const cleanPhone = recipientPhone.replace(/\D/g, "");
+
+  const url = `https://graph.facebook.com/v22.0/${config.whatsappPhoneNumberId}/messages`;
+
+  const payload = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: cleanPhone,
+    type: "template",
+    template: {
+      name: templateName,
+      language: {
+        code: languageCode,
+      },
+    },
+  };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.whatsappToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = (await response.json()) as {
+    messages?: Array<{ id: string }>;
+    error?: unknown;
+  };
+
+  if (!response.ok || !data.messages || data.messages.length === 0) {
+    console.error("❌ Meta WhatsApp Cloud API template error:", data);
+    throw new Error(
+      `Meta API Error: ${
+        (data.error as any)?.message || response.statusText || "Failed to send template message"
+      }`
+    );
+  }
+
+  const messageId = data.messages[0].id;
+  return { messageId, rawResponse: data };
+};
+
+/**
  * Subscribe the WhatsApp Business Account (WABA) to this app's webhooks via Meta Graph API.
  * This instructs Meta to forward incoming messages from the phone number to your webhook URL.
  */
