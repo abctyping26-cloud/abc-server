@@ -86,6 +86,11 @@ export const getClients = async (
       filter.source = req.query.source;
     }
 
+    // Optional timer filter
+    if (req.query.timer === "true") {
+      filter.expirationTimer = { $ne: null };
+    }
+
     // Optional search filter
     if (req.query.search && typeof req.query.search === "string") {
       const searchRegex = new RegExp(req.query.search.trim(), "i");
@@ -120,6 +125,7 @@ export const getClients = async (
           address: c.address || "",
           pin: c.pin || "",
           completed: Boolean(c.completed),
+          expirationTimer: c.expirationTimer || null,
           photo: c.photo || null,
           files: c.files || [],
           fileCount: c.files?.length || 0,
@@ -176,6 +182,7 @@ export const getClientById = async (
           address: client.address || "",
           pin: client.pin || "",
           completed: Boolean(client.completed),
+          expirationTimer: client.expirationTimer || null,
           photo: client.photo || null,
           files: client.files || [],
           source: client.source || "manual",
@@ -205,7 +212,7 @@ export const createClient = async (
       return;
     }
 
-    const { name, email, phone, address, pin, completed } = req.body;
+    const { name, email, phone, address, pin, completed, expirationTimer } = req.body;
 
     const trimmedName = name?.trim() || "";
     const trimmedEmail = email?.trim().toLowerCase() || "";
@@ -260,6 +267,7 @@ export const createClient = async (
       address: address?.trim() || "",
       pin: pin?.trim() || "",
       completed: completed === true || completed === "true",
+      expirationTimer: expirationTimer ? new Date(expirationTimer) : null,
       source: "manual",
       createdBy: createdByObjectId || undefined,
       files: [],
@@ -278,6 +286,7 @@ export const createClient = async (
           address: newClient.address || "",
           pin: newClient.pin || "",
           completed: newClient.completed,
+          expirationTimer: newClient.expirationTimer || null,
           photo: null,
           files: [],
           source: newClient.source,
@@ -324,7 +333,7 @@ export const updateClient = async (
       return;
     }
 
-    const { name, email, phone, address, pin, completed } = req.body;
+    const { name, email, phone, address, pin, completed, expirationTimer } = req.body;
 
     if (name !== undefined) client.name = name.trim();
     if (email !== undefined) client.email = email.trim().toLowerCase() || undefined;
@@ -333,6 +342,9 @@ export const updateClient = async (
     if (pin !== undefined) client.pin = pin.trim();
     if (completed !== undefined) {
       client.completed = completed === true || completed === "true";
+    }
+    if (expirationTimer !== undefined) {
+      client.expirationTimer = expirationTimer && expirationTimer !== "" ? new Date(expirationTimer) : null;
     }
 
     await client.save();
@@ -350,6 +362,7 @@ export const updateClient = async (
           address: client.address || "",
           pin: client.pin || "",
           completed: client.completed,
+          expirationTimer: client.expirationTimer || null,
           photo: client.photo || null,
           files: client.files || [],
           source: client.source,

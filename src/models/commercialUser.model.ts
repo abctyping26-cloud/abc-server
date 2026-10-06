@@ -25,6 +25,7 @@ export interface ICommercialUser extends Document {
   address?: string;
   pin?: string;
   completed: boolean; // Service completed status (true / false)
+  expirationTimer?: Date | null; // Optional expiration deadline timer
   photo?: IClientPhoto;
   files: IClientFile[]; // Unlimited client attachments stored in Cloudinary
   source: "website" | "manual"; // Registered online vs manually entered by admin
@@ -115,6 +116,11 @@ const commercialUserSchema = new Schema<ICommercialUser>(
     completed: {
       type: Boolean,
       default: false,
+      index: true,
+    },
+    expirationTimer: {
+      type: Date,
+      default: null,
       index: true,
     },
     photo: {

@@ -21,6 +21,10 @@ import {
   getWebTrafficAnalytics,
 } from "../controllers/analytics.controller.js";
 import {
+  getActivityFeed,
+  getActivityStats,
+} from "../controllers/activityFeed.controller.js";
+import {
   getServices,
   getServiceBySlug,
   createService,
@@ -47,6 +51,10 @@ router.get("/analytics/cloud-usage", authenticateAdmin, getCloudUsageAnalytics);
 
 // Website visitor & traffic analytics (Google Analytics 4 API)
 router.get("/analytics/web-traffic", authenticateAdmin, getWebTrafficAnalytics);
+
+// Master Admin Aggregated Activity Feed & Audit Trail
+router.get("/activities", authenticateAdmin, getActivityFeed);
+router.get("/activities/stats", authenticateAdmin, getActivityStats);
 
 // Services and Required Documentation management routes
 router.get("/services", authenticateAdmin, getServices);
