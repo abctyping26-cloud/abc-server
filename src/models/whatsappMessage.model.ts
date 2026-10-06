@@ -9,6 +9,7 @@ export type WhatsAppMessageType =
   | "video"
   | "sticker"
   | "location"
+  | "template"
   | "other";
 export type WhatsAppStatus =
   | "received"
@@ -76,6 +77,7 @@ const whatsappMessageSchema = new Schema<IWhatsAppMessage>(
         "video",
         "sticker",
         "location",
+        "template",
         "other",
       ],
       default: "text",

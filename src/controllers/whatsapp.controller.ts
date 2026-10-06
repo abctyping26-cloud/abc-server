@@ -317,7 +317,7 @@ export const sendReply = async (
     if (templateName) {
       // Send via Meta Cloud API as an approved template message
       result = await sendWhatsAppTemplate(cleanPhone, templateName, languageCode || "en");
-      messageType = "template";
+      messageType = "text";
       if (!messageText) {
         messageText = `[Template: ${templateName}]`;
       }
