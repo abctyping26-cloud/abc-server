@@ -301,9 +301,18 @@ export const processIncomingWebhook = async (body: any): Promise<void> => {
       for (const statusObj of value.statuses) {
         const { id: statusMsgId, status } = statusObj;
         if (statusMsgId && status) {
+          if (status === "failed") {
+            console.error(
+              `❌ WhatsApp message (${statusMsgId}) delivery FAILED by Meta:`,
+              JSON.stringify(statusObj.errors || statusObj)
+            );
+          }
           await WhatsAppMessage.findOneAndUpdate(
             { messageId: statusMsgId },
-            { status: status as any }
+            {
+              status: status as any,
+              ...(statusObj.errors ? { rawPayload: statusObj } : {}),
+            }
           ).exec();
         }
       }
