@@ -1501,6 +1501,20 @@ export const createCashTransaction = async (
       return;
     }
 
+    let finalReference = String(reference || "").trim();
+    if (!finalReference) {
+      const allDirect = await AccountingCashTransaction.find({}, { reference: 1 });
+      let maxNum = 0;
+      allDirect.forEach((item) => {
+        const match = String(item.reference || "").match(/(\d+)/);
+        if (match) {
+          const val = parseInt(match[1], 10);
+          if (!isNaN(val) && val > maxNum) maxNum = val;
+        }
+      });
+      finalReference = `REC-${String(maxNum + 1).padStart(4, "0")}`;
+    }
+
     const newTx = await AccountingCashTransaction.create({
       txType,
       txDate: txDate ? new Date(txDate) : new Date(),
@@ -1508,7 +1522,7 @@ export const createCashTransaction = async (
       amount: numAmount,
       customerOrParty: String(customerOrParty).trim(),
       category: String(category).trim() || "General",
-      reference: String(reference).trim(),
+      reference: finalReference,
       description: String(description).trim(),
       toBank: String(toBank).trim(),
       createdBy: (req as any).user?._id || (req as any).user?.id || null,
@@ -1547,38 +1561,16 @@ export const getCashTransactions = async (
     const accountDoc = await AccountingCashAccount.findOne({ accountName: regex });
     const openingBalance = Number(accountDoc?.openingBalance || 0);
 
-    // 2. Direct Cash Transactions
+    // 2. Direct Physical Cash Transactions (Isolated - only real paper cash entries)
     const directTxs = await AccountingCashTransaction.find({
       $or: [{ accountName: regex }, { accountName: { $exists: false } }],
-    });
-
-    // 3. Incomes received in cash
-    const incomes = await AccountingIncome.find({ payMode: "cash" });
-
-    // 4. Expenses paid in cash
-    const expenses = await AccountingExpense.find({ payMode: "cash" });
-
-    // 5. Invoices with cash payment
-    const invoices = await AccountingInvoice.find({
-      $or: [
-        { "paymentDetails.payCash": { $exists: true, $ne: "" } },
-        { "paymentDetails.payMethod": { $regex: /cash/i } },
-      ],
-    });
-
-    // 6. Bank Transactions with Cash (Cash deposits to bank or withdrawals from bank)
-    const bankTxs = await AccountingBankTransaction.find({
-      $or: [
-        { txType: "Deposit", paymentType: "Cash" },
-        { txType: "Withdrawel" },
-      ],
     });
 
     interface UnifiedCashTx {
       id: string;
       date: Date;
       type: string;
-      category: "income" | "expense" | "transfer" | "deposit" | "withdrawal" | "invoice";
+      category: string;
       reference: string;
       description: string;
       customerOrParty?: string;
@@ -1589,15 +1581,15 @@ export const getCashTransactions = async (
 
     const allItems: UnifiedCashTx[] = [];
 
-    // Map Direct Cash Transactions
+    // Map Direct Physical Cash Transactions only
     for (const dt of directTxs) {
       if (dt.txType === "Cash In") {
         allItems.push({
           id: dt._id.toString(),
           date: dt.txDate || dt.createdAt,
           type: "Cash In",
-          category: "income",
-          reference: dt.reference || "CSH-" + dt._id.toString().slice(-4).toUpperCase(),
+          category: dt.category || "Cash In",
+          reference: dt.reference || "REC-" + dt._id.toString().slice(-4).toUpperCase(),
           description: dt.description || "Cash Received",
           customerOrParty: dt.customerOrParty || "",
           debit: 0,
@@ -1609,8 +1601,8 @@ export const getCashTransactions = async (
           id: dt._id.toString(),
           date: dt.txDate || dt.createdAt,
           type: "Cash Out",
-          category: "expense",
-          reference: dt.reference || "CSH-" + dt._id.toString().slice(-4).toUpperCase(),
+          category: dt.category || "Cash Out",
+          reference: dt.reference || "REC-" + dt._id.toString().slice(-4).toUpperCase(),
           description: dt.description || "Cash Paid Out",
           customerOrParty: dt.customerOrParty || "",
           debit: dt.amount,
@@ -1622,7 +1614,7 @@ export const getCashTransactions = async (
           id: dt._id.toString(),
           date: dt.txDate || dt.createdAt,
           type: "Deposit to Bank",
-          category: "transfer",
+          category: dt.category || "transfer",
           reference: dt.reference || "BNK-DEP-" + dt._id.toString().slice(-4).toUpperCase(),
           description: `Cash deposited to ${dt.toBank || "Bank"}${dt.description ? ` (${dt.description})` : ""}`,
           customerOrParty: dt.toBank || "",
@@ -1635,99 +1627,12 @@ export const getCashTransactions = async (
           id: dt._id.toString(),
           date: dt.txDate || dt.createdAt,
           type: "Bank Withdrawal (To Cash)",
-          category: "transfer",
+          category: dt.category || "transfer",
           reference: dt.reference || "BNK-WTH-" + dt._id.toString().slice(-4).toUpperCase(),
           description: `Cash withdrawn from bank into drawer${dt.description ? ` (${dt.description})` : ""}`,
           customerOrParty: dt.toBank || "",
           debit: 0,
           credit: dt.amount, // cash entering cash drawer
-          runningBalance: 0,
-        });
-      }
-    }
-
-    // Map Incomes (payMode: cash)
-    for (const inc of incomes) {
-      allItems.push({
-        id: inc._id.toString(),
-        date: inc.incomeDate || inc.createdAt,
-        type: `Income (${inc.type})`,
-        category: "income",
-        reference: inc.incomeId,
-        description: inc.description || inc.type,
-        customerOrParty: inc.division || "",
-        debit: 0,
-        credit: inc.amount,
-        runningBalance: 0,
-      });
-    }
-
-    // Map Expenses (payMode: cash)
-    for (const exp of expenses) {
-      allItems.push({
-        id: exp._id.toString(),
-        date: exp.expenseDate || exp.createdAt,
-        type: `Expense (${exp.type})`,
-        category: "expense",
-        reference: exp.expenseId,
-        description: exp.description || exp.type,
-        customerOrParty: exp.supplierName || "",
-        debit: exp.amount,
-        credit: 0,
-        runningBalance: 0,
-      });
-    }
-
-    // Map Customer Invoices (paid in cash)
-    for (const inv of invoices) {
-      const cashAmt = Number(
-        inv.paymentDetails?.payCash ||
-        (inv.paymentDetails?.payMethod?.toLowerCase().includes("cash")
-          ? (inv.financialSummary?.paid || inv.financialSummary?.grossAmount || 0)
-          : 0)
-      );
-      if (cashAmt > 0) {
-        allItems.push({
-          id: inv._id.toString(),
-          date: inv.invoiceDate ? new Date(inv.invoiceDate) : inv.createdAt,
-          type: "Customer Invoice (Cash)",
-          category: "invoice",
-          reference: inv.invoiceNo ? `#${inv.invoiceNo}` : "INV",
-          description: inv.customer?.name ? `Invoice Payment - ${inv.customer.name}` : "Cash Invoice Payment",
-          customerOrParty: inv.customer?.name || "",
-          debit: 0,
-          credit: cashAmt,
-          runningBalance: 0,
-        });
-      }
-    }
-
-    // Map Bank Transactions involving Cash
-    for (const bt of bankTxs) {
-      if (bt.txType === "Deposit" && bt.paymentType === "Cash") {
-        allItems.push({
-          id: bt._id.toString() + "-dep",
-          date: bt.txDate || bt.createdAt,
-          type: "Bank Cash Deposit",
-          category: "deposit",
-          reference: "DEP-" + bt._id.toString().slice(-4).toUpperCase(),
-          description: `Cash deposited into ${bt.bankName}${bt.description ? ` (${bt.description})` : ""}`,
-          customerOrParty: bt.bankName,
-          debit: bt.amount, // cash leaves drawer
-          credit: 0,
-          runningBalance: 0,
-        });
-      } else if (bt.txType === "Withdrawel") {
-        allItems.push({
-          id: bt._id.toString() + "-wth",
-          date: bt.txDate || bt.createdAt,
-          type: "Bank Cash Withdrawal",
-          category: "withdrawal",
-          reference: "WTH-" + bt._id.toString().slice(-4).toUpperCase(),
-          description: `Cash withdrawn from ${bt.bankName} into drawer${bt.description ? ` (${bt.description})` : ""}`,
-          customerOrParty: bt.bankName,
-          debit: 0,
-          credit: bt.amount, // cash enters drawer
           runningBalance: 0,
         });
       }
@@ -1750,6 +1655,18 @@ export const getCashTransactions = async (
     // Reverse to show newest transactions first
     const transactionsDesc = [...allItems].reverse();
 
+    // Calculate next sequential receipt number
+    let maxReceiptNum = 0;
+    directTxs.forEach((dt) => {
+      const match = String(dt.reference || "").match(/(\d+)/);
+      if (match) {
+        const val = parseInt(match[1], 10);
+        if (!isNaN(val) && val > maxReceiptNum) maxReceiptNum = val;
+      }
+    });
+    const nextReceiptNo = `REC-${String(maxReceiptNum + 1).padStart(4, "0")}`;
+    const recentReceiptNo = maxReceiptNum > 0 ? `REC-${String(maxReceiptNum).padStart(4, "0")}` : "None";
+
     res.status(200).json({
       status: "success",
       count: transactionsDesc.length,
@@ -1763,6 +1680,8 @@ export const getCashTransactions = async (
           totalDebit,
           currentBalance: running,
         },
+        nextReceiptNo,
+        recentReceiptNo,
         transactions: transactionsDesc,
       },
     });
