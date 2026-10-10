@@ -22,6 +22,11 @@ import {
   getExpenses,
   createExpense,
   deleteExpense,
+  getCashAccounts,
+  createCashAccount,
+  deleteCashAccount,
+  getCashTransactions,
+  createCashTransaction,
 } from "../controllers/accounting.controller.js";
 import {
   authenticateAdmin,
@@ -54,6 +59,13 @@ router.post("/banks", createBank);
 router.delete("/banks/:id", authenticateAdmin, requireDeletePermission, deleteBank);
 router.get("/bank-transactions", getBankTransactions);
 router.post("/bank-transactions", createBankTransaction);
+
+// Cash Accounts & Cash Transactions Management
+router.get("/cash-accounts", getCashAccounts);
+router.post("/cash-accounts", createCashAccount);
+router.delete("/cash-accounts/:id", authenticateAdmin, requireDeletePermission, deleteCashAccount);
+router.get("/cash-transactions", getCashTransactions);
+router.post("/cash-transactions", createCashTransaction);
 
 // Income Management (MongoDB: accounting-incomes)
 router.get("/incomes", getIncomes);

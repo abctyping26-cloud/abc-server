@@ -6,6 +6,8 @@ import { AccountingInvoice } from "../models/invoice.model.js";
 import { AccountingIncome } from "../models/accountingIncome.model.js";
 import { AccountingExpense } from "../models/accountingExpense.model.js";
 import { AccountingBankTransaction } from "../models/accountingBankTransaction.model.js";
+import { AccountingCashAccount } from "../models/accountingCashAccount.model.js";
+import { AccountingCashTransaction } from "../models/accountingCashTransaction.model.js";
 
 /**
  * Format a number as zero-padded string (e.g. 0 -> "0000", 1 -> "0001")
@@ -1307,5 +1309,464 @@ export const getBankTransactions = async (
   }
 };
 
+/**
+ * ============================================================================
+ * CASH ACCOUNTS & CASH TRANSACTIONS CONTROLLERS (MongoDB)
+ * ============================================================================
+ */
 
+/**
+ * Get Cash Accounts (Registers / Drawers) from MongoDB
+ * Auto-initializes "Main Cash" if no cash accounts exist yet.
+ */
+export const getCashAccounts = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const filter: Record<string, any> = { status: "active" };
 
+    if (req.query.search && typeof req.query.search === "string") {
+      const regex = new RegExp(req.query.search.trim(), "i");
+      filter.$or = [{ accountName: regex }, { description: regex }];
+    }
+
+    let accounts = await AccountingCashAccount.find(filter)
+      .sort({ createdAt: -1 })
+      .populate("createdBy", "name identifier role");
+
+    // Auto-seed default "Main Cash" register if no accounts exist
+    if (accounts.length === 0 && !req.query.search) {
+      const defaultAccount = await AccountingCashAccount.create({
+        accountName: "Main Cash",
+        description: "Primary cash in hand & office drawer",
+        currency: "AED",
+        openingBalance: 0,
+        status: "active",
+      });
+      accounts = [defaultAccount];
+    }
+
+    res.status(200).json({
+      status: "success",
+      count: accounts.length,
+      data: {
+        cashAccounts: accounts.map((a) => ({
+          id: a._id.toString(),
+          _id: a._id.toString(),
+          accountName: a.accountName,
+          description: a.description || "",
+          currency: a.currency || "AED",
+          openingBalance: a.openingBalance || 0,
+          status: a.status,
+          createdBy: a.createdBy || null,
+          createdAt: a.createdAt,
+          updatedAt: a.updatedAt,
+        })),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Create Cash Account in MongoDB
+ */
+export const createCashAccount = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const {
+      accountName,
+      description = "",
+      currency = "AED",
+      openingBalance = 0,
+    } = req.body;
+
+    if (!accountName || typeof accountName !== "string" || !accountName.trim()) {
+      res.status(400).json({
+        status: "fail",
+        message: "Account name is required (e.g. Counter Cash, Petty Cash).",
+      });
+      return;
+    }
+
+    const existing = await AccountingCashAccount.findOne({
+      accountName: new RegExp(`^${accountName.trim()}$`, "i"),
+    });
+    if (existing) {
+      res.status(400).json({
+        status: "fail",
+        message: `Cash account '${accountName.trim()}' already exists.`,
+      });
+      return;
+    }
+
+    const cashAccount = await AccountingCashAccount.create({
+      accountName: accountName.trim(),
+      description: String(description).trim(),
+      currency: String(currency).trim() || "AED",
+      openingBalance: Number(openingBalance) || 0,
+      status: "active",
+      createdBy: (req as any).user?._id || (req as any).user?.id || null,
+    });
+
+    res.status(201).json({
+      status: "success",
+      message: "Cash account created successfully in MongoDB.",
+      data: {
+        cashAccount: {
+          id: cashAccount._id.toString(),
+          _id: cashAccount._id.toString(),
+          accountName: cashAccount.accountName,
+          description: cashAccount.description,
+          currency: cashAccount.currency,
+          openingBalance: cashAccount.openingBalance,
+          status: cashAccount.status,
+          createdAt: cashAccount.createdAt,
+          updatedAt: cashAccount.updatedAt,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Delete Cash Account from MongoDB
+ */
+export const deleteCashAccount = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const account = await AccountingCashAccount.findByIdAndDelete(id);
+
+    if (!account) {
+      res.status(404).json({
+        status: "fail",
+        message: "Cash account record not found.",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      status: "success",
+      message: "Cash account deleted successfully from MongoDB.",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Record a Direct Cash Transaction in MongoDB
+ */
+export const createCashTransaction = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const {
+      txType,
+      txDate,
+      accountName = "Main Cash",
+      amount,
+      customerOrParty = "",
+      category = "General",
+      reference = "",
+      description = "",
+      toBank = "",
+    } = req.body;
+
+    if (!txType || !["Cash In", "Cash Out", "Deposit to Bank", "Withdrawal from Bank"].includes(txType)) {
+      res.status(400).json({
+        status: "fail",
+        message: "Valid txType is required (Cash In, Cash Out, Deposit to Bank, Withdrawal from Bank).",
+      });
+      return;
+    }
+
+    const numAmount = Number(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      res.status(400).json({ status: "fail", message: "Amount must be greater than 0." });
+      return;
+    }
+
+    const newTx = await AccountingCashTransaction.create({
+      txType,
+      txDate: txDate ? new Date(txDate) : new Date(),
+      accountName: String(accountName).trim() || "Main Cash",
+      amount: numAmount,
+      customerOrParty: String(customerOrParty).trim(),
+      category: String(category).trim() || "General",
+      reference: String(reference).trim(),
+      description: String(description).trim(),
+      toBank: String(toBank).trim(),
+      createdBy: (req as any).user?._id || (req as any).user?.id || null,
+    });
+
+    res.status(201).json({
+      status: "success",
+      message: `Cash Transaction (${txType}) of ${numAmount} recorded successfully in MongoDB.`,
+      data: { transaction: newTx },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get Cash Transactions Ledger from MongoDB
+ * Unifies:
+ * 1. Direct cash transactions (AccountingCashTransaction)
+ * 2. Incomes received in cash (AccountingIncome payMode: cash)
+ * 3. Expenses paid in cash (AccountingExpense payMode: cash)
+ * 4. Paid Invoices paid in cash (AccountingInvoice)
+ * 5. Bank cash deposits & withdrawals (AccountingBankTransaction)
+ */
+export const getCashTransactions = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { accountName } = req.query;
+    const targetAccount = (typeof accountName === "string" && accountName.trim()) ? accountName.trim() : "Main Cash";
+    const regex = new RegExp(`^${targetAccount.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
+
+    // 1. Get cash account opening balance
+    const accountDoc = await AccountingCashAccount.findOne({ accountName: regex });
+    const openingBalance = Number(accountDoc?.openingBalance || 0);
+
+    // 2. Direct Cash Transactions
+    const directTxs = await AccountingCashTransaction.find({
+      $or: [{ accountName: regex }, { accountName: { $exists: false } }],
+    });
+
+    // 3. Incomes received in cash
+    const incomes = await AccountingIncome.find({ payMode: "cash" });
+
+    // 4. Expenses paid in cash
+    const expenses = await AccountingExpense.find({ payMode: "cash" });
+
+    // 5. Invoices with cash payment
+    const invoices = await AccountingInvoice.find({
+      $or: [
+        { "paymentDetails.payCash": { $exists: true, $ne: "" } },
+        { "paymentDetails.payMethod": { $regex: /cash/i } },
+      ],
+    });
+
+    // 6. Bank Transactions with Cash (Cash deposits to bank or withdrawals from bank)
+    const bankTxs = await AccountingBankTransaction.find({
+      $or: [
+        { txType: "Deposit", paymentType: "Cash" },
+        { txType: "Withdrawel" },
+      ],
+    });
+
+    interface UnifiedCashTx {
+      id: string;
+      date: Date;
+      type: string;
+      category: "income" | "expense" | "transfer" | "deposit" | "withdrawal" | "invoice";
+      reference: string;
+      description: string;
+      customerOrParty?: string;
+      debit: number;   // Outflow (-)
+      credit: number;  // Inflow (+)
+      runningBalance: number;
+    }
+
+    const allItems: UnifiedCashTx[] = [];
+
+    // Map Direct Cash Transactions
+    for (const dt of directTxs) {
+      if (dt.txType === "Cash In") {
+        allItems.push({
+          id: dt._id.toString(),
+          date: dt.txDate || dt.createdAt,
+          type: "Cash In",
+          category: "income",
+          reference: dt.reference || "CSH-" + dt._id.toString().slice(-4).toUpperCase(),
+          description: dt.description || "Cash Received",
+          customerOrParty: dt.customerOrParty || "",
+          debit: 0,
+          credit: dt.amount,
+          runningBalance: 0,
+        });
+      } else if (dt.txType === "Cash Out") {
+        allItems.push({
+          id: dt._id.toString(),
+          date: dt.txDate || dt.createdAt,
+          type: "Cash Out",
+          category: "expense",
+          reference: dt.reference || "CSH-" + dt._id.toString().slice(-4).toUpperCase(),
+          description: dt.description || "Cash Paid Out",
+          customerOrParty: dt.customerOrParty || "",
+          debit: dt.amount,
+          credit: 0,
+          runningBalance: 0,
+        });
+      } else if (dt.txType === "Deposit to Bank") {
+        allItems.push({
+          id: dt._id.toString(),
+          date: dt.txDate || dt.createdAt,
+          type: "Deposit to Bank",
+          category: "transfer",
+          reference: dt.reference || "BNK-DEP-" + dt._id.toString().slice(-4).toUpperCase(),
+          description: `Cash deposited to ${dt.toBank || "Bank"}${dt.description ? ` (${dt.description})` : ""}`,
+          customerOrParty: dt.toBank || "",
+          debit: dt.amount, // cash leaving cash drawer
+          credit: 0,
+          runningBalance: 0,
+        });
+      } else if (dt.txType === "Withdrawal from Bank") {
+        allItems.push({
+          id: dt._id.toString(),
+          date: dt.txDate || dt.createdAt,
+          type: "Bank Withdrawal (To Cash)",
+          category: "transfer",
+          reference: dt.reference || "BNK-WTH-" + dt._id.toString().slice(-4).toUpperCase(),
+          description: `Cash withdrawn from bank into drawer${dt.description ? ` (${dt.description})` : ""}`,
+          customerOrParty: dt.toBank || "",
+          debit: 0,
+          credit: dt.amount, // cash entering cash drawer
+          runningBalance: 0,
+        });
+      }
+    }
+
+    // Map Incomes (payMode: cash)
+    for (const inc of incomes) {
+      allItems.push({
+        id: inc._id.toString(),
+        date: inc.incomeDate || inc.createdAt,
+        type: `Income (${inc.type})`,
+        category: "income",
+        reference: inc.incomeId,
+        description: inc.description || inc.type,
+        customerOrParty: inc.division || "",
+        debit: 0,
+        credit: inc.amount,
+        runningBalance: 0,
+      });
+    }
+
+    // Map Expenses (payMode: cash)
+    for (const exp of expenses) {
+      allItems.push({
+        id: exp._id.toString(),
+        date: exp.expenseDate || exp.createdAt,
+        type: `Expense (${exp.type})`,
+        category: "expense",
+        reference: exp.expenseId,
+        description: exp.description || exp.type,
+        customerOrParty: exp.supplierName || "",
+        debit: exp.amount,
+        credit: 0,
+        runningBalance: 0,
+      });
+    }
+
+    // Map Customer Invoices (paid in cash)
+    for (const inv of invoices) {
+      const cashAmt = Number(
+        inv.paymentDetails?.payCash ||
+        (inv.paymentDetails?.payMethod?.toLowerCase().includes("cash")
+          ? (inv.financialSummary?.paid || inv.financialSummary?.grossAmount || 0)
+          : 0)
+      );
+      if (cashAmt > 0) {
+        allItems.push({
+          id: inv._id.toString(),
+          date: inv.invoiceDate ? new Date(inv.invoiceDate) : inv.createdAt,
+          type: "Customer Invoice (Cash)",
+          category: "invoice",
+          reference: inv.invoiceNo ? `#${inv.invoiceNo}` : "INV",
+          description: inv.customer?.name ? `Invoice Payment - ${inv.customer.name}` : "Cash Invoice Payment",
+          customerOrParty: inv.customer?.name || "",
+          debit: 0,
+          credit: cashAmt,
+          runningBalance: 0,
+        });
+      }
+    }
+
+    // Map Bank Transactions involving Cash
+    for (const bt of bankTxs) {
+      if (bt.txType === "Deposit" && bt.paymentType === "Cash") {
+        allItems.push({
+          id: bt._id.toString() + "-dep",
+          date: bt.txDate || bt.createdAt,
+          type: "Bank Cash Deposit",
+          category: "deposit",
+          reference: "DEP-" + bt._id.toString().slice(-4).toUpperCase(),
+          description: `Cash deposited into ${bt.bankName}${bt.description ? ` (${bt.description})` : ""}`,
+          customerOrParty: bt.bankName,
+          debit: bt.amount, // cash leaves drawer
+          credit: 0,
+          runningBalance: 0,
+        });
+      } else if (bt.txType === "Withdrawel") {
+        allItems.push({
+          id: bt._id.toString() + "-wth",
+          date: bt.txDate || bt.createdAt,
+          type: "Bank Cash Withdrawal",
+          category: "withdrawal",
+          reference: "WTH-" + bt._id.toString().slice(-4).toUpperCase(),
+          description: `Cash withdrawn from ${bt.bankName} into drawer${bt.description ? ` (${bt.description})` : ""}`,
+          customerOrParty: bt.bankName,
+          debit: 0,
+          credit: bt.amount, // cash enters drawer
+          runningBalance: 0,
+        });
+      }
+    }
+
+    // Sort chronologically ascending
+    allItems.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    let running = openingBalance;
+    let totalCredit = 0;
+    let totalDebit = 0;
+
+    for (const item of allItems) {
+      running = running + item.credit - item.debit;
+      item.runningBalance = running;
+      totalCredit += item.credit;
+      totalDebit += item.debit;
+    }
+
+    // Reverse to show newest transactions first
+    const transactionsDesc = [...allItems].reverse();
+
+    res.status(200).json({
+      status: "success",
+      count: transactionsDesc.length,
+      data: {
+        account: {
+          accountName: accountDoc?.accountName || targetAccount,
+          description: accountDoc?.description || "",
+          currency: accountDoc?.currency || "AED",
+          openingBalance,
+          totalCredit,
+          totalDebit,
+          currentBalance: running,
+        },
+        transactions: transactionsDesc,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
