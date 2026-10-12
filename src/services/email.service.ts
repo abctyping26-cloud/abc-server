@@ -179,3 +179,146 @@ export const sendReplyToCustomer = async (params: SendReplyToCustomerParams) => 
 
   return result.data;
 };
+
+export interface SendExpenseReminderParams {
+  title: string;
+  category: string;
+  amount: number;
+  currency?: string;
+  expiryDate: Date;
+  targetEmail: string;
+  daysRemaining: number;
+  recurrence?: string;
+  notes?: string;
+}
+
+/**
+ * Send an automated expense expiration / renewal reminder via Resend
+ */
+export const sendExpenseReminderEmail = async (params: SendExpenseReminderParams) => {
+  const resend = getResendClient();
+
+  if (!resend) {
+    throw new Error(
+      "RESEND_API_KEY is not configured. Please add your Resend API key to server/.env"
+    );
+  }
+
+  const {
+    title,
+    category,
+    amount,
+    currency = "AED",
+    expiryDate,
+    targetEmail,
+    daysRemaining,
+    recurrence = "monthly",
+    notes,
+  } = params;
+
+  const formattedDate = new Date(expiryDate).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
+  let urgencyTitle = `Expires in ${daysRemaining} day(s)`;
+  let badgeColor = "#2563eb"; // blue
+  let badgeBg = "#dbeafe";
+  let headerBorder = "#3b82f6";
+
+  if (daysRemaining <= 0) {
+    urgencyTitle = "⚠️ Due / Expiring Today!";
+    badgeColor = "#b91c1c";
+    badgeBg = "#fee2e2";
+    headerBorder = "#ef4444";
+  } else if (daysRemaining <= 2) {
+    urgencyTitle = `🚨 Urgent: ${daysRemaining} Day${daysRemaining === 1 ? "" : "s"} Remaining`;
+    badgeColor = "#b91c1c";
+    badgeBg = "#fee2e2";
+    headerBorder = "#ef4444";
+  } else if (daysRemaining <= 3) {
+    urgencyTitle = `⏳ Attention: 3 Days Remaining`;
+    badgeColor = "#b45309";
+    badgeBg = "#fef3c7";
+    headerBorder = "#f59e0b";
+  } else {
+    urgencyTitle = `🗓️ Upcoming Renewal: 1 Week Notice`;
+    badgeColor = "#1e40af";
+    badgeBg = "#dbeafe";
+    headerBorder = "#3b82f6";
+  }
+
+  const subject = `[Expense Reminder] ${urgencyTitle} - ${title}`;
+
+  const htmlContent = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+      <div style="border-bottom: 2px solid ${headerBorder}; padding-bottom: 16px; margin-bottom: 20px;">
+        <span style="background-color: ${badgeBg}; color: ${badgeColor}; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.05em;">${urgencyTitle}</span>
+        <h2 style="margin: 12px 0 0 0; color: #0f172a; font-size: 22px;">${title}</h2>
+      </div>
+
+      <p style="color: #334155; font-size: 15px; line-height: 1.5; margin-bottom: 20px;">
+        This is an automated reminder regarding an upcoming expense or subscription renewal approaching its expiration date.
+      </p>
+
+      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-bottom: 20px;">
+        <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #475569; text-transform: uppercase; letter-spacing: 0.05em;">Expense Details</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <tr>
+            <td style="padding: 6px 0; color: #64748b; width: 140px;"><strong>Item / Service:</strong></td>
+            <td style="padding: 6px 0; color: #0f172a; font-weight: 600;">${title}</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b;"><strong>Category:</strong></td>
+            <td style="padding: 6px 0; color: #0f172a;">${category}</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b;"><strong>Amount:</strong></td>
+            <td style="padding: 6px 0; color: #0f172a; font-weight: 700; font-size: 16px;">${currency} ${amount.toLocaleString()}</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b;"><strong>Expiry Date:</strong></td>
+            <td style="padding: 6px 0; color: ${badgeColor}; font-weight: 700;">${formattedDate}</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b;"><strong>Recurrence:</strong></td>
+            <td style="padding: 6px 0; color: #475569; text-transform: capitalize;">${recurrence.replace("_", " ")}</td>
+          </tr>
+        </table>
+
+        ${
+          notes
+            ? `<div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed #cbd5e1; font-size: 13px; color: #475569;">
+                <strong>Notes:</strong> ${notes}
+               </div>`
+            : ""
+        }
+      </div>
+
+      <div style="text-align: center; margin: 28px 0 20px 0;">
+        <a href="${config.adminUrl}" style="background-color: #0f172a; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; display: inline-block;">
+          Open Admin Dashboard
+        </a>
+      </div>
+
+      <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center;">
+        ABC Automated Expense Reminder System • abcauh.ae
+      </div>
+    </div>
+  `;
+
+  const result = await resend.emails.send({
+    from: config.emailFrom,
+    to: [targetEmail.trim()],
+    subject,
+    html: htmlContent,
+  });
+
+  if (result.error) {
+    throw new Error(result.error.message || "Failed to send expense reminder email via Resend");
+  }
+
+  return result.data;
+};
+

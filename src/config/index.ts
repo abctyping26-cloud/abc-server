@@ -30,6 +30,9 @@ const gaPropertyId = process.env.GA_PROPERTY_ID || "557168604";
 const gaKeyFile = process.env.GA_KEY_FILE || "abc-analytics-510416-c1909bf0e532.json";
 const gaCredentialsJson = process.env.GA_CREDENTIALS_JSON || "";
 
+// Cron Secret for automated scheduled triggers
+const cronSecret = process.env.CRON_SECRET || "abc_cron_secret_key";
+
 export const config = {
   port,
   nodeEnv,
@@ -41,6 +44,7 @@ export const config = {
   jwtExpiresIn,
   resendApiKey,
   emailFrom,
+  cronSecret,
   cloudinaryCloudName,
   cloudinaryApiKey,
   cloudinaryApiSecret,

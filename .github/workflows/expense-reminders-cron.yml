@@ -1,0 +1,34 @@
+name: Expense Reminder Daily Cron
+
+on:
+  schedule:
+    # Runs daily at 04:00 UTC (08:00 AM UAE time / 09:30 AM IST)
+    - cron: '0 4 * * *'
+  # Allows triggering manually anytime from the GitHub Actions web UI
+  workflow_dispatch:
+
+jobs:
+  check-expense-reminders:
+    name: Ping Expense Reminder Endpoint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Cron Trigger to Backend
+        run: |
+          echo "Triggering expense reminder check..."
+          HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://abc-server-s6rb.onrender.com/api/v1/admin/expense-reminders/cron-check" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+
+          echo "HTTP Status: $HTTP_STATUS"
+          echo "Response Body:"
+          cat response.json || true
+          echo ""
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "Expense reminders check completed successfully!"
+            exit 0
+          else
+            echo "Expense reminder check failed with status $HTTP_STATUS"
+            exit 1
+          fi
