@@ -10,17 +10,26 @@ import {
   getExpenseReminderLogs,
 } from "../controllers/expenseReminder.controller.js";
 import { authenticateAdmin } from "../middlewares/auth.middleware.js";
+import { config } from "../config/index.js";
 
 const router = Router();
 
 // Automated or Manual Cron Check:
 // Supports Authorization: Bearer <CRON_SECRET> from GitHub Actions / cron-job.org
 // OR can be called by an authenticated Admin from the admin UI
-router.post("/cron-check", (req, res, next) => {
+router.post("/cron-check", (req, res) => {
   const authHeader = req.headers.authorization;
-  // If request has bearer token that might be admin JWT or cron secret:
-  authenticateAdmin(req as any, res, () => {
-    // If authenticateAdmin succeeds or fails, pass to controller which handles CRON_SECRET fallback
+  const token = authHeader?.startsWith("Bearer ")
+    ? authHeader.split(" ")[1]?.trim()
+    : authHeader?.trim();
+
+  // If request contains the valid CRON_SECRET, allow immediately without requiring Admin JWT
+  if (token && config.cronSecret && token === config.cronSecret.trim()) {
+    return cronCheckExpenseReminders(req as any, res);
+  }
+
+  // Otherwise, authenticate as an Admin user (e.g. manual scan from Admin Dashboard)
+  return authenticateAdmin(req as any, res, () => {
     cronCheckExpenseReminders(req as any, res);
   });
 });
