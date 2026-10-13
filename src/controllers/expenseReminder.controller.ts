@@ -1,6 +1,8 @@
 import type { Request, Response } from "express";
+import { Types } from "mongoose";
 import { ExpenseReminder, type IExpenseReminder } from "../models/expenseReminder.model.js";
 import { ExpenseReminderLog } from "../models/expenseReminderLog.model.js";
+import { ExpenseReminderRecipient } from "../models/expenseReminderRecipient.model.js";
 import { sendExpenseReminderEmail } from "../services/email.service.js";
 import { config } from "../config/index.js";
 import type { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
@@ -303,8 +305,116 @@ export const deleteExpenseReminder = async (req: Request, res: Response): Promis
 };
 
 /**
+ * GET /api/v1/admin/expense-reminders/recipients
+ * List all configured test recipients
+ */
+export const getExpenseReminderRecipients = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const recipients = await ExpenseReminderRecipient.find().sort({ createdAt: -1 });
+    res.status(200).json({ status: "success", data: { recipients } });
+  } catch (error: any) {
+    res.status(500).json({ status: "error", message: error.message || "Failed to fetch recipients" });
+  }
+};
+
+/**
+ * POST /api/v1/admin/expense-reminders/recipients
+ * Add a new test recipient email
+ */
+export const addExpenseReminderRecipient = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { email, name } = req.body;
+    if (!email || !email.trim()) {
+      res.status(400).json({ status: "fail", message: "Email is required" });
+      return;
+    }
+    const cleanEmail = email.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      res.status(400).json({ status: "fail", message: "Please enter a valid email address" });
+      return;
+    }
+
+    const existing = await ExpenseReminderRecipient.findOne({ email: cleanEmail });
+    if (existing) {
+      res.status(409).json({ status: "fail", message: "This email is already in the test recipients list" });
+      return;
+    }
+
+    const recipient = await ExpenseReminderRecipient.create({
+      email: cleanEmail,
+      name: name ? name.trim() : "",
+      isActive: true,
+      createdBy: req.admin?.id ? new Types.ObjectId(req.admin.id) : null,
+    });
+
+    res.status(201).json({ status: "success", data: { recipient } });
+  } catch (error: any) {
+    res.status(500).json({ status: "error", message: error.message || "Failed to add recipient" });
+  }
+};
+
+/**
+ * DELETE /api/v1/admin/expense-reminders/recipients/:id
+ * Remove a test recipient email
+ */
+export const deleteExpenseReminderRecipient = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const recipient = await ExpenseReminderRecipient.findByIdAndDelete(id);
+    if (!recipient) {
+      res.status(404).json({ status: "fail", message: "Recipient not found" });
+      return;
+    }
+    res.status(200).json({ status: "success", message: "Recipient removed successfully" });
+  } catch (error: any) {
+    res.status(500).json({ status: "error", message: error.message || "Failed to delete recipient" });
+  }
+};
+
+/**
+ * POST /api/v1/admin/expense-reminders/:id/plan-test
+ * Toggle scheduled test execution for the upcoming 8:00 AM daily cron cycle
+ */
+export const togglePlanTestReminder = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const reminder = await ExpenseReminder.findById(id);
+    if (!reminder) {
+      res.status(404).json({ status: "fail", message: "Expense reminder not found" });
+      return;
+    }
+
+    reminder.plannedTestNextCycle = !reminder.plannedTestNextCycle;
+    await reminder.save();
+
+    res.status(200).json({
+      status: "success",
+      message: reminder.plannedTestNextCycle
+        ? "Test email scheduled to send in the upcoming 8:00 AM cycle!"
+        : "Planned 8:00 AM test cycle cancelled.",
+      data: { reminder },
+    });
+  } catch (error: any) {
+    res.status(500).json({ status: "error", message: error.message || "Failed to update planned test" });
+  }
+};
+
+/**
  * POST /api/v1/admin/expense-reminders/:id/test-email
- * Send an immediate test reminder email to verify deliverability
+ * Send an immediate test reminder email to all active test recipients and the item's target email
  */
 export const sendTestReminderEmail = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -317,64 +427,87 @@ export const sendTestReminderEmail = async (req: Request, res: Response): Promis
 
     const daysLeft = getDaysRemaining(reminder.expiryDate);
 
-    const emailResult = await sendExpenseReminderEmail({
-      title: reminder.title,
-      category: reminder.category,
-      amount: reminder.amount,
-      currency: reminder.currency,
-      expiryDate: reminder.expiryDate,
-      targetEmail: reminder.targetEmail,
-      daysRemaining: daysLeft,
-      recurrence: reminder.recurrence,
-      notes: reminder.notes,
-    });
+    // Collect all recipient emails: reminder's targetEmail PLUS all active test recipients
+    const activeRecipients = await ExpenseReminderRecipient.find({ isActive: true });
+    const recipientSet = new Set<string>();
 
-    // Record delivery log in MongoDB
-    await ExpenseReminderLog.create({
-      reminderId: reminder._id,
-      title: reminder.title,
-      recipientEmail: reminder.targetEmail,
-      category: reminder.category,
-      amount: reminder.amount,
-      triggerStage: "test_email",
-      daysRemaining: daysLeft,
-      status: "sent",
-      resendEmailId: (emailResult as any)?.id || "",
-      sentAt: new Date(),
-      triggeredBy: "admin",
-    });
+    if (reminder.targetEmail) {
+      recipientSet.add(reminder.targetEmail.trim().toLowerCase());
+    }
+    for (const r of activeRecipients) {
+      if (r.email) {
+        recipientSet.add(r.email.trim().toLowerCase());
+      }
+    }
+
+    const targetEmails = Array.from(recipientSet);
+    if (targetEmails.length === 0) {
+      res.status(400).json({
+        status: "fail",
+        message: "No recipient emails found. Add test recipients or configure a target email.",
+      });
+      return;
+    }
+
+    const results: Array<{ email: string; success: boolean; error?: string }> = [];
+
+    for (const email of targetEmails) {
+      try {
+        const emailResult = await sendExpenseReminderEmail({
+          title: `[Test] ${reminder.title}`,
+          category: reminder.category,
+          amount: reminder.amount,
+          currency: reminder.currency,
+          expiryDate: reminder.expiryDate,
+          targetEmail: email,
+          daysRemaining: daysLeft,
+          recurrence: reminder.recurrence,
+          notes: reminder.notes,
+        });
+
+        await ExpenseReminderLog.create({
+          reminderId: reminder._id,
+          title: reminder.title,
+          recipientEmail: email,
+          category: reminder.category,
+          amount: reminder.amount,
+          triggerStage: "test_email",
+          daysRemaining: daysLeft,
+          status: "sent",
+          resendEmailId: (emailResult as any)?.id || "",
+          sentAt: new Date(),
+          triggeredBy: "admin",
+        });
+
+        results.push({ email, success: true });
+      } catch (err: any) {
+        await ExpenseReminderLog.create({
+          reminderId: reminder._id,
+          title: reminder.title,
+          recipientEmail: email,
+          category: reminder.category,
+          amount: reminder.amount,
+          triggerStage: "test_email",
+          daysRemaining: daysLeft,
+          status: "failed",
+          errorMessage: err.message || "Failed to send test email",
+          sentAt: new Date(),
+          triggeredBy: "admin",
+        });
+
+        results.push({ email, success: false, error: err.message });
+      }
+    }
+
+    const successCount = results.filter((r) => r.success).length;
 
     res.status(200).json({
       status: "success",
-      message: `Test reminder email successfully sent to ${reminder.targetEmail}`,
-      data: { emailResult },
+      message: `Test email dispatched to ${successCount} of ${targetEmails.length} recipient(s).`,
+      data: { results },
     });
   } catch (error: any) {
     console.error("Error sending test reminder email:", error);
-
-    try {
-      if (req.params.id) {
-        const item = await ExpenseReminder.findById(req.params.id);
-        if (item) {
-          await ExpenseReminderLog.create({
-            reminderId: item._id,
-            title: item.title,
-            recipientEmail: item.targetEmail,
-            category: item.category,
-            amount: item.amount,
-            triggerStage: "test_email",
-            daysRemaining: getDaysRemaining(item.expiryDate),
-            status: "failed",
-            errorMessage: error.message || "Failed to send test email",
-            sentAt: new Date(),
-            triggeredBy: "admin",
-          });
-        }
-      }
-    } catch (logErr) {
-      console.error("Failed to write error log:", logErr);
-    }
-
     res.status(500).json({
       status: "error",
       message: error.message || "Failed to send test email",
@@ -515,6 +648,83 @@ export const cronCheckExpenseReminders = async (
             error: err.message || "Failed to send email",
           });
         }
+      }
+    }
+
+    // 3. Process any planned test reminders scheduled for this 8:00 AM cycle
+    const plannedTestReminders = await ExpenseReminder.find({
+      status: "active",
+      plannedTestNextCycle: true,
+    });
+
+    if (plannedTestReminders.length > 0) {
+      const activeTestRecipients = await ExpenseReminderRecipient.find({ isActive: true });
+
+      for (const item of plannedTestReminders) {
+        const daysLeft = getDaysRemaining(item.expiryDate);
+        const recipientSet = new Set<string>();
+        if (item.targetEmail) recipientSet.add(item.targetEmail.trim().toLowerCase());
+        for (const r of activeTestRecipients) {
+          if (r.email) recipientSet.add(r.email.trim().toLowerCase());
+        }
+
+        for (const email of recipientSet) {
+          try {
+            const emailResult = await sendExpenseReminderEmail({
+              title: `[8:00 AM Planned Test] ${item.title}`,
+              category: item.category,
+              amount: item.amount,
+              currency: item.currency,
+              expiryDate: item.expiryDate,
+              targetEmail: email,
+              daysRemaining: daysLeft,
+              recurrence: item.recurrence,
+              notes: item.notes ? `[Planned 8:00 AM Test Run] ${item.notes}` : "[Planned 8:00 AM Test Run]",
+            });
+
+            await ExpenseReminderLog.create({
+              reminderId: item._id,
+              title: item.title,
+              recipientEmail: email,
+              category: item.category,
+              amount: item.amount,
+              triggerStage: "planned_test",
+              daysRemaining: daysLeft,
+              status: "sent",
+              resendEmailId: (emailResult as any)?.id || "",
+              sentAt: new Date(),
+              triggeredBy: "cron",
+            });
+
+            notificationsDispatched.push({
+              id: item._id.toString(),
+              title: item.title,
+              targetEmail: email,
+              triggerStage: "planned_test",
+              daysRemaining: daysLeft,
+            });
+          } catch (err: any) {
+            await ExpenseReminderLog.create({
+              reminderId: item._id,
+              title: item.title,
+              recipientEmail: email,
+              category: item.category,
+              amount: item.amount,
+              triggerStage: "planned_test",
+              daysRemaining: daysLeft,
+              status: "failed",
+              errorMessage: err.message || "Failed to send planned test email",
+              sentAt: new Date(),
+              triggeredBy: "cron",
+            });
+
+            errors.push({ id: item._id.toString(), title: item.title, error: err.message || "Failed to send planned test" });
+          }
+        }
+
+        // Reset the queue flag so it only runs once
+        item.plannedTestNextCycle = false;
+        await item.save();
       }
     }
 

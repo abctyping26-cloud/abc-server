@@ -20,6 +20,7 @@ export interface IExpenseReminder extends Document {
   status: "active" | "renewed" | "cancelled";
   remindersSent: IExpenseReminderSent;
   lastNotifiedAt?: Date;
+  plannedTestNextCycle?: boolean;
   createdBy?: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -94,6 +95,11 @@ const expenseReminderSchema = new Schema<IExpenseReminder>(
     lastNotifiedAt: {
       type: Date,
       default: null,
+    },
+    plannedTestNextCycle: {
+      type: Boolean,
+      default: false,
+      index: true,
     },
     createdBy: {
       type: Schema.Types.ObjectId,
