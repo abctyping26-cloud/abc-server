@@ -355,7 +355,7 @@ export const sendTestEmailToAllRecipients = async (req: Request, res: Response):
     for (const rec of activeRecipients) {
       try {
         const emailResult = await sendExpenseReminderEmail({
-          title: `[Real-Time Test] ${title}`,
+          title,
           category,
           amount,
           currency,
@@ -363,7 +363,9 @@ export const sendTestEmailToAllRecipients = async (req: Request, res: Response):
           targetEmail: rec.email,
           daysRemaining: daysLeft,
           recurrence,
-          notes: `[Real-Time Recipient Test] ${notes}`,
+          notes,
+          isTest: true,
+          testType: "real_time",
         });
 
         await ExpenseReminderLog.create({
@@ -590,7 +592,7 @@ export const sendTestReminderEmail = async (req: Request, res: Response): Promis
     for (const email of targetEmails) {
       try {
         const emailResult = await sendExpenseReminderEmail({
-          title: `[Test] ${reminder.title}`,
+          title: reminder.title,
           category: reminder.category,
           amount: reminder.amount,
           currency: reminder.currency,
@@ -599,6 +601,8 @@ export const sendTestReminderEmail = async (req: Request, res: Response): Promis
           daysRemaining: daysLeft,
           recurrence: reminder.recurrence,
           notes: reminder.notes,
+          isTest: true,
+          testType: "real_time",
         });
 
         await ExpenseReminderLog.create({
@@ -807,7 +811,7 @@ export const cronCheckExpenseReminders = async (
         for (const email of recipientSet) {
           try {
             const emailResult = await sendExpenseReminderEmail({
-              title: `[8:00 AM Planned Test] ${item.title}`,
+              title: item.title,
               category: item.category,
               amount: item.amount,
               currency: item.currency,
@@ -815,7 +819,9 @@ export const cronCheckExpenseReminders = async (
               targetEmail: email,
               daysRemaining: daysLeft,
               recurrence: item.recurrence,
-              notes: item.notes ? `[Planned 8:00 AM Test Run] ${item.notes}` : "[Planned 8:00 AM Test Run]",
+              notes: item.notes,
+              isTest: true,
+              testType: "planned_8am",
             });
 
             await ExpenseReminderLog.create({
