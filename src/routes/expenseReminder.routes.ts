@@ -12,6 +12,8 @@ import {
   addExpenseReminderRecipient,
   deleteExpenseReminderRecipient,
   togglePlanTestReminder,
+  sendTestEmailToAllRecipients,
+  togglePlanTestForNextCycle,
 } from "../controllers/expenseReminder.controller.js";
 import { authenticateAdmin } from "../middlewares/auth.middleware.js";
 import { config } from "../config/index.js";
@@ -58,6 +60,8 @@ router.use(authenticateAdmin);
 router.get("/recipients", getExpenseReminderRecipients);
 router.post("/recipients", addExpenseReminderRecipient);
 router.delete("/recipients/:id", deleteExpenseReminderRecipient);
+router.post("/recipients/test-now", sendTestEmailToAllRecipients);
+router.post("/recipients/plan-test", togglePlanTestForNextCycle);
 
 router.get("/logs", getExpenseReminderLogs);
 router.get("/", getExpenseReminders);

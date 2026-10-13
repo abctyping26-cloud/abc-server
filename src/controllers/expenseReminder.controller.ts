@@ -314,9 +314,145 @@ export const getExpenseReminderRecipients = async (
 ): Promise<void> => {
   try {
     const recipients = await ExpenseReminderRecipient.find().sort({ createdAt: -1 });
-    res.status(200).json({ status: "success", data: { recipients } });
+    const isPlanTestQueued = Boolean(
+      await ExpenseReminder.exists({ status: "active", plannedTestNextCycle: true })
+    );
+    res.status(200).json({ status: "success", data: { recipients, isPlanTestQueued } });
   } catch (error: any) {
     res.status(500).json({ status: "error", message: error.message || "Failed to fetch recipients" });
+  }
+};
+
+/**
+ * POST /api/v1/admin/expense-reminders/recipients/test-now
+ * Send an immediate real-time test email to all registered active test recipients
+ */
+export const sendTestEmailToAllRecipients = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const activeRecipients = await ExpenseReminderRecipient.find({ isActive: true });
+    if (activeRecipients.length === 0) {
+      res.status(400).json({
+        status: "fail",
+        message: "No active test recipients found. Please add a test recipient email first.",
+      });
+      return;
+    }
+
+    // Pick first active reminder, or generate a realistic sample
+    const sampleReminder = await ExpenseReminder.findOne({ status: "active" });
+    const title = sampleReminder ? sampleReminder.title : "Office Telecom & Cloud Subscription";
+    const category = sampleReminder ? sampleReminder.category : "Telecom";
+    const amount = sampleReminder ? sampleReminder.amount : 250;
+    const currency = sampleReminder ? sampleReminder.currency : "AED";
+    const expiryDate = sampleReminder ? sampleReminder.expiryDate : new Date(Date.now() + 7 * 86400000);
+    const recurrence = sampleReminder ? sampleReminder.recurrence : "monthly";
+    const notes = sampleReminder?.notes || "Real-time test verification for notification recipient";
+    const daysLeft = getDaysRemaining(expiryDate);
+
+    const sentEmails: string[] = [];
+    const failedEmails: string[] = [];
+
+    for (const rec of activeRecipients) {
+      try {
+        const emailResult = await sendExpenseReminderEmail({
+          title: `[Real-Time Test] ${title}`,
+          category,
+          amount,
+          currency,
+          expiryDate,
+          targetEmail: rec.email,
+          daysRemaining: daysLeft,
+          recurrence,
+          notes: `[Real-Time Recipient Test] ${notes}`,
+        });
+
+        await ExpenseReminderLog.create({
+          reminderId: sampleReminder?._id,
+          title: `[Real-Time Test] ${title}`,
+          recipientEmail: rec.email,
+          category,
+          amount,
+          triggerStage: "test_email",
+          daysRemaining: daysLeft,
+          status: "sent",
+          resendEmailId: (emailResult as any)?.id || "",
+          sentAt: new Date(),
+          triggeredBy: "admin",
+        });
+
+        sentEmails.push(rec.email);
+      } catch (err: any) {
+        await ExpenseReminderLog.create({
+          reminderId: sampleReminder?._id,
+          title: `[Real-Time Test] ${title}`,
+          recipientEmail: rec.email,
+          category,
+          amount,
+          triggerStage: "test_email",
+          daysRemaining: daysLeft,
+          status: "failed",
+          errorMessage: err.message || "Failed to send real-time test",
+          sentAt: new Date(),
+          triggeredBy: "admin",
+        });
+        failedEmails.push(rec.email);
+      }
+    }
+
+    res.status(200).json({
+      status: "success",
+      message: `Real-time test email sent to ${sentEmails.length} recipient(s).`,
+      data: { sentEmails, failedEmails, totalSent: sentEmails.length },
+    });
+  } catch (error: any) {
+    res.status(500).json({ status: "error", message: error.message || "Failed to send test email" });
+  }
+};
+
+/**
+ * POST /api/v1/admin/expense-reminders/recipients/plan-test
+ * Schedule / plan a test execution for the upcoming 8:00 AM cycle across active reminders
+ */
+export const togglePlanTestForNextCycle = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const queuedCount = await ExpenseReminder.countDocuments({ status: "active", plannedTestNextCycle: true });
+
+    if (queuedCount > 0) {
+      await ExpenseReminder.updateMany({ status: "active" }, { $set: { plannedTestNextCycle: false } });
+      res.status(200).json({
+        status: "success",
+        message: "Cancelled scheduled 8:00 AM test cycle.",
+        data: { isQueued: false },
+      });
+    } else {
+      const targetReminder = await ExpenseReminder.findOne({ status: "active" });
+      if (targetReminder) {
+        targetReminder.plannedTestNextCycle = true;
+        await targetReminder.save();
+      } else {
+        const d = new Date();
+        d.setDate(d.getDate() + 7);
+        await ExpenseReminder.create({
+          title: "Test Subscription Service",
+          category: "Telecom",
+          amount: 150,
+          currency: "AED",
+          expiryDate: d,
+          targetEmail: "admin@abcauh.ae",
+          recurrence: "monthly",
+          status: "active",
+          plannedTestNextCycle: true,
+        });
+      }
+
+      res.status(200).json({
+        status: "success",
+        message: "Scheduled test for next 8:00 AM cycle! All test recipients will receive emails.",
+        data: { isQueued: true },
+      });
+    }
+  } catch (error: any) {
+    res.status(500).json({ status: "error", message: error.message || "Failed to toggle plan test" });
   }
 };
 
