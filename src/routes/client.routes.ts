@@ -1,17 +1,28 @@
 import { Router } from "express";
-import { getClientStatus } from "../controllers/client.controller.js";
-import { loginCommercial } from "../controllers/auth.controller.js";
+import {
+  getClientStatus,
+  getClientDashboard,
+} from "../controllers/client.controller.js";
+import {
+  loginCommercial,
+  checkClientPhone,
+} from "../controllers/auth.controller.js";
 import { createEnquiry } from "../controllers/enquiry.controller.js";
 import {
   getServices,
   getServiceBySlug,
 } from "../controllers/service.controller.js";
 import { getTopMarqueeConfig } from "../controllers/websiteContent.controller.js";
+import { authenticateClient } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
 router.get("/ping", getClientStatus);
 router.post("/auth/login", loginCommercial);
+router.post("/auth/check-phone", checkClientPhone);
+
+// Protected client dashboard & tracking
+router.get("/dashboard", authenticateClient, getClientDashboard);
 
 // Public client enquiry routes
 router.post("/enquiry", createEnquiry);
@@ -25,5 +36,3 @@ router.get("/services/:slug", getServiceBySlug);
 router.get("/website-content/top-marquee", getTopMarqueeConfig);
 
 export default router;
-
-

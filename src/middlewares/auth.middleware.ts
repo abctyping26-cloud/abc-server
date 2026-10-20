@@ -166,3 +166,64 @@ export const authenticateAdmin = async (
     });
   }
 };
+
+export interface AuthenticatedClient {
+  id: string;
+  identifier: string;
+  type: "commercial";
+}
+
+export interface ClientAuthenticatedRequest extends Request {
+  clientUser?: AuthenticatedClient;
+}
+
+/**
+ * Middleware to authenticate Commercial Client requests using JWT
+ */
+export const authenticateClient = async (
+  req: ClientAuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+    let token: string | undefined;
+
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    } else if (req.query.token && typeof req.query.token === "string") {
+      token = req.query.token;
+    }
+
+    if (!token) {
+      res.status(401).json({
+        status: "fail",
+        message: "Authentication required. Please log in with your phone and PIN.",
+      });
+      return;
+    }
+
+    const decoded = jwt.verify(token, config.jwtSecret) as any;
+    if (decoded.type !== "commercial" && !decoded.id) {
+      res.status(403).json({
+        status: "fail",
+        message: "Access forbidden. Not a valid client token.",
+      });
+      return;
+    }
+
+    req.clientUser = {
+      id: decoded.id,
+      identifier: decoded.identifier || "",
+      type: "commercial",
+    };
+
+    next();
+  } catch (error) {
+    res.status(401).json({
+      status: "fail",
+      message: "Invalid or expired session. Please log in again.",
+    });
+  }
+};
+

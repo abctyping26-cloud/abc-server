@@ -1,5 +1,6 @@
 import type { Response, NextFunction } from "express";
 import { Types } from "mongoose";
+import bcrypt from "bcryptjs";
 import { CommercialUser, type IClientFile } from "../models/commercialUser.model.js";
 import { AdminUser } from "../models/adminUser.model.js";
 import { uploadStreamToCloudinary, deleteFromCloudinary } from "../config/cloudinary.js";
@@ -212,7 +213,7 @@ export const createClient = async (
       return;
     }
 
-    const { name, email, phone, address, pin, completed, expirationTimer } = req.body;
+    const { name, email, phone, address, pin, completed, expirationTimer, password } = req.body;
 
     const trimmedName = name?.trim() || "";
     const trimmedEmail = email?.trim().toLowerCase() || "";
@@ -257,10 +258,19 @@ export const createClient = async (
       return;
     }
 
+    // Generate or use 6-digit numeric PIN for walk-in client tracking
+    const rawPin =
+      password && password.toString().trim()
+        ? password.toString().trim()
+        : Math.floor(100000 + Math.random() * 900000).toString();
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(rawPin, salt);
+
     const createdByObjectId = await resolveAdminObjectId(admin);
 
     const newClient = await CommercialUser.create({
       identifier,
+      password: hashedPassword,
       name: trimmedName,
       email: trimmedEmail || undefined,
       phone: trimmedPhone || undefined,
@@ -293,6 +303,7 @@ export const createClient = async (
           createdBy: createdByObjectId ? createdByObjectId.toString() : admin.id,
           createdAt: newClient.createdAt,
         },
+        temporaryPin: rawPin,
       },
     });
   } catch (error: any) {
@@ -333,7 +344,7 @@ export const updateClient = async (
       return;
     }
 
-    const { name, email, phone, address, pin, completed, expirationTimer } = req.body;
+    const { name, email, phone, address, pin, completed, expirationTimer, password } = req.body;
 
     if (name !== undefined) client.name = name.trim();
     if (email !== undefined) client.email = email.trim().toLowerCase() || undefined;
@@ -345,6 +356,15 @@ export const updateClient = async (
     }
     if (expirationTimer !== undefined) {
       client.expirationTimer = expirationTimer && expirationTimer !== "" ? new Date(expirationTimer) : null;
+    }
+
+    let updatedPin: string | undefined;
+    if (password !== undefined && password.toString().trim() !== "") {
+      const pinStr: string = password.toString().trim();
+      updatedPin = pinStr;
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(pinStr, salt);
+      client.password = hashedPassword;
     }
 
     await client.save();
@@ -368,6 +388,7 @@ export const updateClient = async (
           source: client.source,
           updatedAt: client.updatedAt,
         },
+        temporaryPin: updatedPin,
       },
     });
   } catch (error) {
