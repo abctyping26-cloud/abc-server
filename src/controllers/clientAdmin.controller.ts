@@ -129,6 +129,7 @@ export const getClients = async (
           expirationTimer: c.expirationTimer || null,
           photo: c.photo || null,
           files: c.files || [],
+          services: c.services || [],
           fileCount: c.files?.length || 0,
           source: c.source || "manual",
           createdBy: c.createdBy || null,
@@ -186,6 +187,7 @@ export const getClientById = async (
           expirationTimer: client.expirationTimer || null,
           photo: client.photo || null,
           files: client.files || [],
+          services: client.services || [],
           source: client.source || "manual",
           createdBy: client.createdBy || null,
           createdAt: client.createdAt,
@@ -385,6 +387,7 @@ export const updateClient = async (
           expirationTimer: client.expirationTimer || null,
           photo: client.photo || null,
           files: client.files || [],
+          services: client.services || [],
           source: client.source,
           updatedAt: client.updatedAt,
         },
@@ -718,3 +721,259 @@ export const deleteClient = async (
     next(error);
   }
 };
+
+/**
+ * Add a service to a client
+ */
+export const addClientService = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { name, status, targetDate, notes } = req.body;
+
+    if (!name || !name.trim()) {
+      res.status(400).json({ status: "fail", message: "Service name is required." });
+      return;
+    }
+
+    const client = await CommercialUser.findById(id);
+    if (!client) {
+      res.status(404).json({ status: "fail", message: "Client not found." });
+      return;
+    }
+
+    if (!hasClientPermission(req.admin, client)) {
+      res.status(403).json({ status: "fail", message: "Permission denied." });
+      return;
+    }
+
+    client.services.push({
+      name: name.trim(),
+      status: status === "completed" ? "completed" : "in_progress",
+      targetDate: targetDate ? new Date(targetDate) : null,
+      notes: notes?.trim() || "",
+      files: [],
+    } as any);
+
+    await client.save();
+
+    res.status(201).json({
+      status: "success",
+      message: "Service added successfully.",
+      data: {
+        services: client.services,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Update a client's service (status, name, targetDate, notes)
+ */
+export const updateClientService = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id, serviceId } = req.params;
+    const { name, status, targetDate, notes } = req.body;
+
+    const client = await CommercialUser.findById(id);
+    if (!client) {
+      res.status(404).json({ status: "fail", message: "Client not found." });
+      return;
+    }
+
+    if (!hasClientPermission(req.admin, client)) {
+      res.status(403).json({ status: "fail", message: "Permission denied." });
+      return;
+    }
+
+    const service = (client.services as any).id(serviceId);
+    if (!service) {
+      res.status(404).json({ status: "fail", message: "Service item not found." });
+      return;
+    }
+
+    if (name !== undefined) service.name = name.trim();
+    if (status !== undefined) service.status = status;
+    if (targetDate !== undefined) service.targetDate = targetDate ? new Date(targetDate) : null;
+    if (notes !== undefined) service.notes = notes.trim();
+
+    await client.save();
+
+    res.status(200).json({
+      status: "success",
+      message: "Service updated successfully.",
+      data: {
+        services: client.services,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Delete a client's service
+ */
+export const deleteClientService = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id, serviceId } = req.params;
+
+    const client = await CommercialUser.findById(id);
+    if (!client) {
+      res.status(404).json({ status: "fail", message: "Client not found." });
+      return;
+    }
+
+    if (!hasClientPermission(req.admin, client)) {
+      res.status(403).json({ status: "fail", message: "Permission denied." });
+      return;
+    }
+
+    (client.services as any).pull({ _id: serviceId });
+    await client.save();
+
+    res.status(200).json({
+      status: "success",
+      message: "Service removed successfully.",
+      data: {
+        services: client.services,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Upload files directly to a specific client service
+ */
+export const uploadClientServiceFiles = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id, serviceId } = req.params;
+
+    const client = await CommercialUser.findById(id);
+    if (!client) {
+      res.status(404).json({ status: "fail", message: "Client not found." });
+      return;
+    }
+
+    const service = (client.services as any).id(serviceId);
+    if (!service) {
+      res.status(404).json({ status: "fail", message: "Service item not found." });
+      return;
+    }
+
+    const uploadedFiles: Express.Multer.File[] = [];
+    if (Array.isArray(req.files)) {
+      uploadedFiles.push(...req.files);
+    } else if (req.file) {
+      uploadedFiles.push(req.file);
+    }
+
+    if (uploadedFiles.length === 0) {
+      res.status(400).json({ status: "fail", message: "No files provided." });
+      return;
+    }
+
+    const uploaderObjectId = await resolveAdminObjectId(req.admin);
+
+    for (const file of uploadedFiles) {
+      const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const isImage = file.mimetype.startsWith("image/");
+      const isPdf = file.mimetype === "application/pdf" || file.originalname.toLowerCase().endsWith(".pdf");
+
+      const result = await uploadStreamToCloudinary(file.buffer, {
+        folder: `clients/${client.identifier}/services/${serviceId}`,
+        resource_type: isImage ? "image" : isPdf ? "image" : "raw",
+        public_id: `${Date.now()}_${safeName.replace(/\.[^/.]+$/, "")}`,
+        format: isPdf ? "pdf" : undefined,
+      });
+
+      service.files.push({
+        public_id: result.public_id,
+        url: result.secure_url,
+        fileName: file.originalname,
+        fileType: file.mimetype,
+        fileSize: file.size,
+        uploadedAt: new Date(),
+        uploadedBy: uploaderObjectId,
+      });
+    }
+
+    await client.save();
+
+    res.status(200).json({
+      status: "success",
+      message: "Service files uploaded successfully.",
+      data: {
+        services: client.services,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Delete a file from a specific client service
+ */
+export const deleteClientServiceFile = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id, serviceId, fileId } = req.params;
+
+    const client = await CommercialUser.findById(id);
+    if (!client) {
+      res.status(404).json({ status: "fail", message: "Client not found." });
+      return;
+    }
+
+    const service = (client.services as any).id(serviceId);
+    if (!service) {
+      res.status(404).json({ status: "fail", message: "Service item not found." });
+      return;
+    }
+
+    const targetFile = service.files.find((f: any) => f._id?.toString() === fileId);
+    if (targetFile) {
+      try {
+        await deleteFromCloudinary(targetFile.public_id, targetFile.fileType.startsWith("image/") ? "image" : "raw");
+      } catch (cErr) {
+        console.error("Cloudinary delete warning:", cErr);
+      }
+      (service.files as any).pull({ _id: fileId });
+      await client.save();
+    }
+
+    res.status(200).json({
+      status: "success",
+      message: "File deleted successfully.",
+      data: {
+        services: client.services,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

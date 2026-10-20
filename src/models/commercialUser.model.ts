@@ -16,6 +16,17 @@ export interface IClientPhoto {
   url: string;
 }
 
+export interface IClientServiceItem {
+  _id?: Types.ObjectId;
+  name: string;
+  status: "in_progress" | "completed";
+  targetDate?: Date | null;
+  files: IClientFile[];
+  notes?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
 export interface ICommercialUser extends Document {
   identifier: string; // Unique lookup identifier (email, phone, or auto-generated client ID)
   password?: string; // Hashed password (optional for offline/manually added clients)
@@ -28,6 +39,7 @@ export interface ICommercialUser extends Document {
   expirationTimer?: Date | null; // Optional expiration deadline timer
   photo?: IClientPhoto;
   files: IClientFile[]; // Unlimited client attachments stored in Cloudinary
+  services: IClientServiceItem[]; // Admin configured services with individual status & files
   source: "website" | "manual"; // Registered online vs manually entered by admin
   createdBy?: Types.ObjectId; // Reference to AdminUser who created the record (null for website users)
   lastLoginAt?: Date;
@@ -68,6 +80,35 @@ const clientFileSchema = new Schema<IClientFile>(
     },
   },
   { _id: true }
+);
+
+const clientServiceItemSchema = new Schema<IClientServiceItem>(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    status: {
+      type: String,
+      enum: ["in_progress", "completed"],
+      default: "in_progress",
+    },
+    targetDate: {
+      type: Date,
+      default: null,
+    },
+    files: {
+      type: [clientFileSchema],
+      default: [],
+    },
+    notes: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+  },
+  { timestamps: true, _id: true }
 );
 
 const commercialUserSchema = new Schema<ICommercialUser>(
@@ -129,6 +170,10 @@ const commercialUserSchema = new Schema<ICommercialUser>(
     },
     files: {
       type: [clientFileSchema],
+      default: [],
+    },
+    services: {
+      type: [clientServiceItemSchema],
       default: [],
     },
     source: {

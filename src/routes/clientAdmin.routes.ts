@@ -9,6 +9,11 @@ import {
   deleteClientFile,
   uploadClientPhoto,
   deleteClient,
+  addClientService,
+  updateClientService,
+  deleteClientService,
+  uploadClientServiceFiles,
+  deleteClientServiceFile,
 } from "../controllers/clientAdmin.controller.js";
 import {
   authenticateAdmin,
@@ -32,5 +37,12 @@ router.delete("/:id", requireDeletePermission, deleteClient);
 router.post("/:id/files", upload.array("files", 10), uploadClientFiles);
 router.delete("/:id/files/:fileId", requireDeletePermission, deleteClientFile);
 router.post("/:id/photo", upload.single("photo"), uploadClientPhoto);
+
+// Client Individual Services endpoints
+router.post("/:id/services", addClientService);
+router.patch("/:id/services/:serviceId", updateClientService);
+router.delete("/:id/services/:serviceId", deleteClientService);
+router.post("/:id/services/:serviceId/files", upload.array("files", 10), uploadClientServiceFiles);
+router.delete("/:id/services/:serviceId/files/:fileId", deleteClientServiceFile);
 
 export default router;
