@@ -125,7 +125,7 @@ export const authenticateAdmin = async (
           role: "master_admin",
           type: "admin",
           canDeleteData: true,
-          assignedRoles: ["accounting", "enquiries", "whatsapp_enquiries", "clients", "website_edit", "analytics"],
+          assignedRoles: ["accounting", "enquiries", "whatsapp_enquiries", "clients", "website_edit", "analytics", "notes"],
         };
         return next();
       }

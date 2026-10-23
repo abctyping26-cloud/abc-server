@@ -35,7 +35,7 @@ export const getWorkerAdmins = async (
           location: w.location || "",
           deviceInfo: w.deviceInfo || "",
           role: w.role,
-          assignedRoles: w.assignedRoles || ["accounting", "enquiries", "whatsapp_enquiries", "clients"],
+          assignedRoles: w.assignedRoles || ["accounting", "enquiries", "whatsapp_enquiries", "clients", "notes"],
           canDeleteData: Boolean(w.canDeleteData),
           profileCompleted: Boolean(w.profileCompleted && w.name),
           isFirstLogin: w.isFirstLogin ?? true,
@@ -107,7 +107,7 @@ export const createWorkerAdmin = async (
       isFirstLogin: true,
       assignedRoles: Array.isArray(assignedRoles) && assignedRoles.length > 0
         ? assignedRoles
-        : ["accounting", "enquiries", "whatsapp_enquiries", "clients"],
+        : ["accounting", "enquiries", "whatsapp_enquiries", "clients", "notes"],
       canDeleteData: Boolean(canDeleteData),
     });
 

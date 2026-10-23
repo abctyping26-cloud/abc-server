@@ -299,10 +299,10 @@ export const loginAdmin = async (
 
     const isMaster = admin.role === "master_admin" || admin.role === "superadmin";
     const assignedRoles = isMaster
-      ? ["accounting", "enquiries", "whatsapp_enquiries", "clients", "website_edit", "analytics", "overview"]
+      ? ["accounting", "enquiries", "whatsapp_enquiries", "clients", "website_edit", "analytics", "notes", "overview"]
       : (admin.assignedRoles && admin.assignedRoles.length > 0
           ? admin.assignedRoles
-          : ["accounting", "enquiries", "whatsapp_enquiries", "clients"]);
+          : ["accounting", "enquiries", "whatsapp_enquiries", "clients", "notes"]);
     const canDeleteData = isMaster ? true : Boolean(admin.canDeleteData);
 
     const token = generateToken({

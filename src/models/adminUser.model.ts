@@ -67,7 +67,7 @@ const adminUserSchema = new Schema<IAdminUser>(
     },
     assignedRoles: {
       type: [String],
-      default: ["accounting", "enquiries", "whatsapp_enquiries", "clients"],
+      default: ["accounting", "enquiries", "whatsapp_enquiries", "clients", "notes"],
     },
     canDeleteData: {
       type: Boolean,
