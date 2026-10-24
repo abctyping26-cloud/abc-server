@@ -33,6 +33,17 @@ const gaCredentialsJson = process.env.GA_CREDENTIALS_JSON || "";
 // Cron Secret for automated scheduled triggers
 const cronSecret = process.env.CRON_SECRET || "abc_cron_secret_key";
 
+// Telegram Bot Configuration
+const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN || "";
+const telegramChatIds = (process.env.TELEGRAM_CHAT_IDS || "")
+  .split(",")
+  .map((id) => id.trim())
+  .filter(Boolean);
+
+// Render API Configuration
+const renderApiKey = process.env.RENDER_API_KEY || "";
+const renderServiceId = process.env.RENDER_SERVICE_ID || "srv-dai8633l550s73a3vrm0";
+
 export const config = {
   port,
   nodeEnv,
@@ -52,6 +63,10 @@ export const config = {
   whatsappPhoneNumberId,
   whatsappBusinessAccountId,
   whatsappVerifyToken,
+  telegramBotToken,
+  telegramChatIds,
+  renderApiKey,
+  renderServiceId,
   gaPropertyId,
   gaKeyFile,
   gaCredentialsJson,

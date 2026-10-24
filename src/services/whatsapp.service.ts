@@ -5,6 +5,7 @@ import {
   type WhatsAppMessageType,
 } from "../models/whatsappMessage.model.js";
 import { handleWhatsAppAutomation } from "./whatsappAutomation.service.js";
+import { notifyWhatsAppIncoming } from "./telegram.service.js";
 
 interface MetaMediaInfo {
   url: string;
@@ -411,6 +412,16 @@ export const processIncomingWebhook = async (body: any): Promise<void> => {
           status: "received",
           rawPayload: msg,
           timestamp,
+        });
+
+        // Trigger instant Telegram alert for admin/staff
+        notifyWhatsAppIncoming({
+          senderName,
+          senderPhone,
+          text,
+          msgType,
+        }).catch((err) => {
+          console.error("❌ Failed to dispatch Telegram WhatsApp alert:", err);
         });
 
         // Trigger automated client session workflow if applicable

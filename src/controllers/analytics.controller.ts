@@ -163,18 +163,102 @@ export const getCloudUsageAnalytics = async (
       const memoryPercent = parseFloat(
         ((mem.rss / renderMemoryLimitBytes) * 100).toFixed(1)
       );
-      const isRender = Boolean(process.env.RENDER);
+      const isRender = Boolean(process.env.RENDER || config.renderApiKey);
+
+      // Calculate Free Instance Hours for the current calendar month
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const dayOfMonth = now.getDate();
+      const currentHour = now.getHours();
+      const elapsedHours = Math.min(750, (dayOfMonth - 1) * 24 + currentHour);
+      const remainingHours = Math.max(0, 750 - elapsedHours);
+      const percentHoursUsed = parseFloat(((elapsedHours / 750) * 100).toFixed(1));
+      const resetDateFormatted = new Date(year, month + 1, 1).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+
+      let liveService: any = null;
+      let latestDeploy: any = null;
+      let bandwidthMb = 0;
+
+      // Query Render REST API if API Key is configured
+      if (config.renderApiKey) {
+        const serviceId = config.renderServiceId || process.env.RENDER_SERVICE_ID || "srv-dai8633l550s73a3vrm0";
+        const headers = {
+          Authorization: `Bearer ${config.renderApiKey}`,
+          Accept: "application/json",
+        };
+
+        try {
+          const [serviceRes, deployRes, bwRes] = await Promise.allSettled([
+            fetch(`https://api.render.com/v1/services/${serviceId}`, { headers }),
+            fetch(`https://api.render.com/v1/services/${serviceId}/deploys?limit=1`, { headers }),
+            fetch(`https://api.render.com/v1/metrics/bandwidth?resource=${serviceId}`, { headers }),
+          ]);
+
+          if (serviceRes.status === "fulfilled" && serviceRes.value.ok) {
+            liveService = await serviceRes.value.json();
+          }
+
+          if (deployRes.status === "fulfilled" && deployRes.value.ok) {
+            const deploys = await deployRes.value.json();
+            if (Array.isArray(deploys) && deploys[0]?.deploy) {
+              latestDeploy = deploys[0].deploy;
+            }
+          }
+
+          if (bwRes.status === "fulfilled" && bwRes.value.ok) {
+            const bwJson = await bwRes.value.json();
+            if (Array.isArray(bwJson) && bwJson[0]?.values) {
+              const sum = bwJson[0].values.reduce((acc: number, v: any) => acc + (v.value || 0), 0);
+              bandwidthMb = parseFloat(sum.toFixed(2));
+            }
+          }
+        } catch (apiErr: any) {
+          console.warn("Render REST API query warning:", apiErr?.message || apiErr);
+        }
+      }
 
       return {
         status: "operational",
         isRender,
-        serviceName: process.env.RENDER_SERVICE_NAME || "abc-server",
-        serviceId: process.env.RENDER_SERVICE_ID || null,
-        plan: isRender ? "Render Free Web Service" : "Node.js Server Runtime",
+        serviceName: liveService?.name || process.env.RENDER_SERVICE_NAME || "abc-server",
+        serviceId: liveService?.id || config.renderServiceId || null,
+        plan: liveService?.serviceDetails?.plan
+          ? `Render ${liveService.serviceDetails.plan.toUpperCase()} Plan (750 Free Hrs/Mo)`
+          : "Render Free Plan (750 Hrs/Mo)",
+        suspended: liveService?.suspended === "suspended",
+        dashboardUrl: liveService?.dashboardUrl || "https://dashboard.render.com",
+        serviceUrl: liveService?.serviceDetails?.url || "https://abc-server-s6rb.onrender.com",
         uptimeSeconds: Math.floor(process.uptime()),
         uptimeFormatted: formatUptime(process.uptime()),
         nodeVersion: process.version,
         environment: config.nodeEnv,
+        freeHours: {
+          monthlyLimit: 750,
+          usedHours: elapsedHours,
+          remainingHours,
+          percentUsed: Math.min(100, percentHoursUsed),
+          daysRemainingInMonth: Math.max(0, daysInMonth - dayOfMonth),
+          resetDate: resetDateFormatted,
+          singleServiceNote: "1 service active: 750 hours is enough for 24/7 continuous operation all month.",
+        },
+        bandwidth: {
+          recentMb: bandwidthMb,
+          limitFormatted: "100 GB Free Bandwidth / month",
+        },
+        latestDeploy: latestDeploy
+          ? {
+              status: latestDeploy.status,
+              commitMessage: latestDeploy.commit?.message || "Manual trigger",
+              commitId: latestDeploy.commit?.id ? latestDeploy.commit.id.substring(0, 7) : undefined,
+              finishedAt: latestDeploy.finishedAt || latestDeploy.createdAt,
+            }
+          : undefined,
         memory: {
           rssBytes: mem.rss,
           rssFormatted: formatBytes(mem.rss),

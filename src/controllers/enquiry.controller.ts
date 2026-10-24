@@ -10,6 +10,7 @@ import {
   sendEnquiryNotification,
   sendReplyToCustomer,
 } from "../services/email.service.js";
+import { notifyWebsiteEnquiry } from "../services/telegram.service.js";
 
 /**
  * Helper to extract authenticated admin identity from request
@@ -142,6 +143,17 @@ export const createEnquiry = async (
     } catch (emailErr) {
       console.warn("Failed to dispatch enquiry email alert via Resend:", emailErr);
     }
+
+    // Dispatch real-time Telegram alert to admin phones
+    notifyWebsiteEnquiry({
+      name: enquiry.name,
+      phone: enquiry.phone,
+      email: enquiry.email,
+      service: enquiry.service,
+      notes: enquiry.otherService || enquiry.notes,
+    }).catch((telegramErr) => {
+      console.warn("Failed to dispatch enquiry Telegram alert:", telegramErr);
+    });
 
     res.status(201).json({
       status: "success",
