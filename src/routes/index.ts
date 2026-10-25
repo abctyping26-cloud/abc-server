@@ -8,6 +8,7 @@ import testRoutes from "./test.routes.js";
 import whatsappRoutes from "./whatsapp.routes.js";
 import noteRoutes from "./note.routes.js";
 import expenseReminderRoutes from "./expenseReminder.routes.js";
+import workLogRoutes from "./workLog.routes.js";
 
 const apiRouter = Router();
 
@@ -17,6 +18,7 @@ apiRouter.use("/admin/clients", clientAdminRoutes);
 apiRouter.use("/admin/accounting", accountingRoutes);
 apiRouter.use("/admin/notes", noteRoutes);
 apiRouter.use("/admin/expense-reminders", expenseReminderRoutes);
+apiRouter.use("/admin/work-logs", workLogRoutes);
 apiRouter.use("/admin", adminRoutes);
 apiRouter.use("/test", testRoutes);
 apiRouter.use("/whatsapp", whatsappRoutes);
