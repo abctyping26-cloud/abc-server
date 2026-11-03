@@ -6,6 +6,8 @@ import {
 } from "../models/whatsappMessage.model.js";
 import { handleWhatsAppAutomation } from "./whatsappAutomation.service.js";
 import { notifyWhatsAppIncoming } from "./telegram.service.js";
+import { sendWhatsAppNotificationEmail } from "./email.service.js";
+import { getOrCreateWhatsAppConfig } from "../models/whatsappConfig.model.js";
 
 interface MetaMediaInfo {
   url: string;
@@ -271,6 +273,55 @@ export const subscribeWabaToApp = async (): Promise<{
 };
 
 /**
+ * Dispatches an automated email notification for an incoming WhatsApp customer message,
+ * respecting the configuration settings persisted in MongoDB.
+ */
+export const dispatchWhatsAppEmailAlert = async (payload: {
+  senderName?: string;
+  senderPhone: string;
+  text: string;
+  msgType?: string;
+  mediaUrl?: string;
+  mediaFileName?: string;
+  mediaMimeType?: string;
+}): Promise<void> => {
+  try {
+    const configDoc = await getOrCreateWhatsAppConfig();
+    if (!configDoc.emailNotificationsEnabled) {
+      return;
+    }
+
+    const recipients = (configDoc.notificationEmails || [])
+      .map((e) => (typeof e === "string" ? e.trim().toLowerCase() : ""))
+      .filter((e) => e.length > 0);
+
+    if (recipients.length === 0) {
+      return;
+    }
+
+    if (configDoc.notificationMode === "first_message_only") {
+      // Check if there was any prior incoming message from this customer in the past 24 hours
+      const priorCount = await WhatsAppMessage.countDocuments({
+        customerPhone: payload.senderPhone,
+        direction: "incoming",
+        createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      });
+      // The current message is already saved in DB, so priorCount > 1 means it's not the first
+      if (priorCount > 1) {
+        return;
+      }
+    }
+
+    await sendWhatsAppNotificationEmail({
+      ...payload,
+      recipients,
+    });
+  } catch (err: any) {
+    console.error("❌ Failed to dispatch WhatsApp incoming email alert:", err?.message || err);
+  }
+};
+
+/**
  * Process incoming Meta webhook event payload (handles both production and test payloads)
  */
 export const processIncomingWebhook = async (body: any): Promise<void> => {
@@ -422,6 +473,19 @@ export const processIncomingWebhook = async (body: any): Promise<void> => {
           msgType,
         }).catch((err) => {
           console.error("❌ Failed to dispatch Telegram WhatsApp alert:", err);
+        });
+
+        // Trigger instant Email alert to configured admin inboxes (milanjiji0987654321@gmail.com, abctyping20@gmail.com)
+        dispatchWhatsAppEmailAlert({
+          senderName,
+          senderPhone,
+          text,
+          msgType,
+          mediaUrl,
+          mediaFileName,
+          mediaMimeType,
+        }).catch((err) => {
+          console.error("❌ Failed to dispatch WhatsApp incoming email alert:", err);
         });
 
         // Trigger automated client session workflow if applicable

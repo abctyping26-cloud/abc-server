@@ -355,3 +355,169 @@ export const sendExpenseReminderEmail = async (params: SendExpenseReminderParams
   return result.data;
 };
 
+export interface SendWhatsAppNotificationEmailParams {
+  senderName?: string;
+  senderPhone: string;
+  text: string;
+  msgType?: string;
+  mediaUrl?: string;
+  mediaFileName?: string;
+  mediaMimeType?: string;
+  recipients?: string[];
+  isTest?: boolean;
+}
+
+/**
+ * Send an automated real-time notification email to staff/admin when a customer
+ * sends a WhatsApp message or enquiry.
+ */
+export const sendWhatsAppNotificationEmail = async (
+  params: SendWhatsAppNotificationEmailParams
+) => {
+  const resend = getResendClient();
+
+  if (!resend) {
+    throw new Error(
+      "RESEND_API_KEY is not configured. Please add your Resend API key to server/.env"
+    );
+  }
+
+  const {
+    senderName,
+    senderPhone,
+    text,
+    msgType = "text",
+    mediaUrl,
+    mediaFileName,
+    recipients = ["milanjiji0987654321@gmail.com", "abctyping20@gmail.com"],
+    isTest = false,
+  } = params;
+
+  const validRecipients = recipients
+    .map((r) => r.trim().toLowerCase())
+    .filter((r) => r.length > 0);
+
+  if (validRecipients.length === 0) {
+    console.warn("⚠️ No valid recipient email addresses for WhatsApp notification.");
+    return null;
+  }
+
+  const cleanPhone = senderPhone.replace(/\D/g, "");
+  const waChatLink = cleanPhone ? `https://wa.me/${cleanPhone}` : "";
+  const adminChatLink = `${config.adminUrl}/?tab=whatsapp`;
+  const nameSafe = senderName?.trim() || "Customer";
+  const displayPhone = senderPhone.startsWith("+") ? senderPhone : `+${senderPhone}`;
+  const nowFormatted = new Date().toLocaleString("en-GB", {
+    timeZone: "Asia/Dubai",
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+
+  const subject = isTest
+    ? `[TEST ALERT] 🔔 WhatsApp Notification System - ABC Admin`
+    : `🚨 [WhatsApp Enquiry] New message from ${nameSafe} (${displayPhone})`;
+
+  const testBannerHtml = isTest
+    ? `
+      <div style="background-color: #ecfdf5; border: 1px solid #10b981; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px;">
+        <h3 style="margin: 0; color: #065f46; font-size: 15px; font-weight: 700;">
+          ✓ WhatsApp Alert Test Successful
+        </h3>
+        <p style="margin: 6px 0 0 0; color: #047857; font-size: 13px; line-height: 1.5;">
+          This is a verification test from ABC Admin Dashboard. Forwarding to <strong>${validRecipients.join(", ")}</strong> is operating properly.
+        </p>
+      </div>
+    `
+    : "";
+
+  const mediaSnippet = mediaUrl
+    ? `
+      <div style="margin-top: 14px; padding: 12px 16px; background-color: #f1f5f9; border-radius: 8px; border: 1px dashed #cbd5e1;">
+        <span style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase;">Attached Media (${msgType.toUpperCase()}):</span>
+        <div style="margin-top: 6px;">
+          <a href="${mediaUrl}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; font-weight: 600; text-decoration: underline; font-size: 14px;">
+            📄 View / Download Attached ${mediaFileName || msgType}
+          </a>
+        </div>
+      </div>
+    `
+    : "";
+
+  const htmlContent = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+      ${testBannerHtml}
+      
+      <div style="border-bottom: 2px solid #25d366; padding-bottom: 16px; margin-bottom: 20px;">
+        <span style="background-color: #dcfce7; color: #15803d; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.05em;">
+          WhatsApp Live Enquiry
+        </span>
+        <h2 style="margin: 12px 0 0 0; color: #0f172a; font-size: 22px;">New WhatsApp Customer Message</h2>
+      </div>
+
+      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+        <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #475569; text-transform: uppercase; letter-spacing: 0.05em;">Sender Information</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <tr>
+            <td style="padding: 6px 0; color: #64748b; width: 120px;"><strong>Customer:</strong></td>
+            <td style="padding: 6px 0; color: #0f172a; font-weight: 600;">${nameSafe}</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b;"><strong>Phone:</strong></td>
+            <td style="padding: 6px 0; color: #0f172a;">
+              <strong>${displayPhone}</strong>
+              ${waChatLink ? ` &nbsp;•&nbsp; <a href="${waChatLink}" target="_blank" style="color: #25d366; text-decoration: none; font-weight: 600;">Open WhatsApp</a>` : ""}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b;"><strong>Time (GST):</strong></td>
+            <td style="padding: 6px 0; color: #475569;">${nowFormatted}</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b;"><strong>Message Type:</strong></td>
+            <td style="padding: 6px 0; color: #475569; text-transform: uppercase; font-size: 12px; font-weight: 600;">${msgType}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div style="margin-bottom: 24px;">
+        <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #475569; text-transform: uppercase; letter-spacing: 0.05em;">Message Content</h3>
+        <div style="background-color: #f1f5f9; border-left: 4px solid #25d366; padding: 14px 18px; color: #1e293b; font-size: 15px; line-height: 1.6; border-radius: 0 8px 8px 0;">
+          ${(text || "").trim() ? text.replace(/\n/g, "<br/>") : `<em style="color: #64748b;">[${msgType.toUpperCase()} file received without text]</em>`}
+        </div>
+        ${mediaSnippet}
+      </div>
+
+      <div style="margin: 24px 0 16px 0; text-align: center;">
+        <a href="${adminChatLink}" target="_blank" style="background-color: #0f172a; color: #ffffff; padding: 12px 20px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; display: inline-block; margin-right: 10px;">
+          👉 Open in ABC Admin
+        </a>
+        ${
+          waChatLink
+            ? `<a href="${waChatLink}" target="_blank" style="background-color: #25d366; color: #ffffff; padding: 12px 20px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; display: inline-block;">
+                💬 Chat on WhatsApp
+              </a>`
+            : ""
+        }
+      </div>
+
+      <div style="margin-top: 28px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center;">
+        Automated WhatsApp Alert System • ABC Typing Services • abcauh.ae
+      </div>
+    </div>
+  `;
+
+  const result = await resend.emails.send({
+    from: config.emailFrom,
+    to: validRecipients,
+    subject,
+    html: htmlContent,
+  });
+
+  if (result.error) {
+    throw new Error(result.error.message || "Failed to send WhatsApp notification email via Resend");
+  }
+
+  return result.data;
+};
+
+

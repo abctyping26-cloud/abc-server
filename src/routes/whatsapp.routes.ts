@@ -11,6 +11,9 @@ import {
   createQuickReply,
   updateQuickReply,
   deleteQuickReply,
+  getWhatsAppConfig,
+  updateWhatsAppConfig,
+  sendTestWhatsAppEmail,
 } from "../controllers/whatsapp.controller.js";
 
 import {
@@ -38,5 +41,10 @@ router.get("/quick-replies", getQuickReplies);
 router.post("/quick-replies", createQuickReply);
 router.put("/quick-replies/:id", updateQuickReply);
 router.delete("/quick-replies/:id", authenticateAdmin, requireDeletePermission, deleteQuickReply);
+
+// WhatsApp Notification Settings Endpoints
+router.get("/config", getWhatsAppConfig);
+router.put("/config", updateWhatsAppConfig);
+router.post("/config/test-email", sendTestWhatsAppEmail);
 
 export default router;

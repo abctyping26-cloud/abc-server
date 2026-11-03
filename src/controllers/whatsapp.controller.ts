@@ -11,6 +11,11 @@ import {
 import { CommercialUser } from "../models/commercialUser.model.js";
 import { Enquiry } from "../models/enquiry.model.js";
 import {
+  WhatsAppConfig,
+  getOrCreateWhatsAppConfig,
+} from "../models/whatsappConfig.model.js";
+import { sendWhatsAppNotificationEmail } from "../services/email.service.js";
+import {
   processIncomingWebhook,
   sendWhatsAppReply,
   sendWhatsAppTemplate,
@@ -542,5 +547,119 @@ export const deleteQuickReply = async (
     });
   }
 };
+
+/**
+ * Fetch the current WhatsApp notification config from MongoDB
+ */
+export const getWhatsAppConfig = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const configDoc = await getOrCreateWhatsAppConfig();
+    res.status(200).json({
+      success: true,
+      data: configDoc,
+    });
+  } catch (error: any) {
+    console.error("❌ Error fetching WhatsApp config:", error);
+    res.status(500).json({
+      success: false,
+      message: error?.message || "Failed to fetch WhatsApp notification config",
+    });
+  }
+};
+
+/**
+ * Update WhatsApp notification settings in MongoDB
+ */
+export const updateWhatsAppConfig = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { emailNotificationsEnabled, notificationEmails, notificationMode } = req.body;
+
+    const configDoc = await getOrCreateWhatsAppConfig();
+
+    if (typeof emailNotificationsEnabled === "boolean") {
+      configDoc.emailNotificationsEnabled = emailNotificationsEnabled;
+    }
+
+    if (Array.isArray(notificationEmails)) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const cleaned = notificationEmails
+        .map((e) => (typeof e === "string" ? e.trim().toLowerCase() : ""))
+        .filter((e) => e && emailRegex.test(e));
+      configDoc.notificationEmails = cleaned;
+    }
+
+    if (
+      notificationMode === "all_messages" ||
+      notificationMode === "first_message_only"
+    ) {
+      configDoc.notificationMode = notificationMode;
+    }
+
+    await configDoc.save();
+
+    res.status(200).json({
+      success: true,
+      message: "WhatsApp notification settings updated successfully",
+      data: configDoc,
+    });
+  } catch (error: any) {
+    console.error("❌ Error updating WhatsApp config:", error);
+    res.status(500).json({
+      success: false,
+      message: error?.message || "Failed to update WhatsApp notification config",
+    });
+  }
+};
+
+/**
+ * Send an immediate test notification email to the configured email recipients
+ */
+export const sendTestWhatsAppEmail = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const configDoc = await getOrCreateWhatsAppConfig();
+    const recipients = (configDoc.notificationEmails || [])
+      .map((e) => (typeof e === "string" ? e.trim().toLowerCase() : ""))
+      .filter((e) => e.length > 0);
+
+    if (recipients.length === 0) {
+      res.status(400).json({
+        success: false,
+        message: "No valid recipient email addresses configured. Please add at least one email address.",
+      });
+      return;
+    }
+
+    await sendWhatsAppNotificationEmail({
+      senderName: "ABC Customer (Test Alert)",
+      senderPhone: "971501234567",
+      text: "Hello! This is a test WhatsApp enquiry notification from ABC Admin Dashboard. Forwarding to both admin email inboxes is verified and working perfectly!",
+      msgType: "text",
+      recipients,
+      isTest: true,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Test email dispatched successfully to: ${recipients.join(", ")}`,
+      recipients,
+    });
+  } catch (error: any) {
+    console.error("❌ Error sending test WhatsApp email:", error);
+    res.status(500).json({
+      success: false,
+      message: error?.message || "Failed to dispatch test notification email via Resend",
+    });
+  }
+};
+
 
 
