@@ -69,6 +69,8 @@ export const createApp = (): Application => {
         "x-admin-id",
         "x-admin-role",
         "x-admin-identifier",
+        "Idempotency-Key",
+        "idempotency-key",
       ],
     })
   );
