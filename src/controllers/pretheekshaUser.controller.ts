@@ -57,7 +57,7 @@ export const registerPatientOrCouple = async (
       }
     }
 
-    const { mode, singlePatient, wifeData, husbandData, confirmNotDuplicate } = req.body;
+    const { mode, singlePatient, wifeData, husbandData, confirmNotDuplicate, linkToPatientId } = req.body;
 
     if (mode === "couple" && (!wifeData || !husbandData)) {
       res.status(400).json({
@@ -73,6 +73,39 @@ export const registerPatientOrCouple = async (
         message: "Patient data is required for registration",
       });
       return;
+    }
+
+    // Optional: Validate existing partner patient if linking to an existing record
+    let existingPatientDoc: any = null;
+    if (linkToPatientId) {
+      if (Types.ObjectId.isValid(linkToPatientId)) {
+        existingPatientDoc = await PretheekshaUser.findOne({ _id: linkToPatientId, deletedAt: null });
+      } else {
+        existingPatientDoc = await PretheekshaUser.findOne({
+          code: String(linkToPatientId).trim().toUpperCase(),
+          deletedAt: null,
+        });
+      }
+
+      if (!existingPatientDoc) {
+        res.status(404).json({
+          status: "fail",
+          message: "The patient to link partner with was not found",
+        });
+        return;
+      }
+
+      const alreadyInCouple = await PretheekshaCouple.findOne({
+        "members.patient": existingPatientDoc._id,
+        status: "active",
+      });
+      if (alreadyInCouple) {
+        res.status(400).json({
+          status: "fail",
+          message: "This patient is already linked in an active couple record",
+        });
+        return;
+      }
     }
 
     // 2. Duplicate phone check (warning flow rather than hard block)
@@ -243,6 +276,43 @@ export const registerPatientOrCouple = async (
 
       await patientDoc.save();
 
+      let coupleInfo: any = null;
+      if (existingPatientDoc) {
+        const coupleCode = generatePatientCode();
+
+        const roleExisting =
+          existingPatientDoc.sex === "female"
+            ? "intended_mother"
+            : existingPatientDoc.sex === "male"
+            ? "intended_father"
+            : "partner";
+
+        const roleNew =
+          patientDoc.sex === "female"
+            ? "intended_mother"
+            : patientDoc.sex === "male"
+            ? "intended_father"
+            : "partner";
+
+        const coupleDoc = new PretheekshaCouple({
+          code: coupleCode,
+          members: [
+            { patient: existingPatientDoc._id, role: roleExisting, since: new Date() },
+            { patient: patientDoc._id, role: roleNew, since: new Date() },
+          ],
+          status: "active",
+          createdBy,
+        });
+
+        await coupleDoc.save();
+
+        coupleInfo = {
+          code: coupleCode,
+          partnerId: existingPatientDoc._id,
+          partnerCode: existingPatientDoc.code,
+        };
+      }
+
       responseData = {
         mode: "single",
         patient: {
@@ -253,6 +323,7 @@ export const registerPatientOrCouple = async (
           sex: patientDoc.sex,
           dateOfBirth: patientDoc.dateOfBirth,
         },
+        couple: coupleInfo,
       };
     }
 
@@ -437,6 +508,168 @@ export const getPatientById = async (
         ...patient,
         coupleCode: activeCouple?.code || null,
         spouse: spouseInfo,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Update patient clinical info (blood group, protocol, allergies, medical history)
+ * PATCH /api/v1/clinic/patients/:id
+ */
+export const updatePatientClinicalInfo = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : (rawId || "");
+    const { bloodGroup, protocol, allergies, medicalHistory } = req.body;
+
+    const filter: any = Types.ObjectId.isValid(id)
+      ? { _id: id, deletedAt: null }
+      : { code: id.trim().toUpperCase(), deletedAt: null };
+
+    const updateFields: any = {};
+    if (bloodGroup !== undefined) updateFields.bloodGroup = String(bloodGroup).trim();
+    if (protocol !== undefined) updateFields.protocol = String(protocol).trim();
+    if (allergies !== undefined) {
+      updateFields.allergies = Array.isArray(allergies)
+        ? allergies.map((s: any) => String(s).trim()).filter(Boolean)
+        : String(allergies)
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+    }
+    if (medicalHistory !== undefined) updateFields.medicalHistory = String(medicalHistory).trim();
+
+    const updated = await PretheekshaUser.findOneAndUpdate(
+      filter,
+      { $set: updateFields },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!updated) {
+      res.status(404).json({
+        status: "fail",
+        message: "Patient not found",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: updated,
+      message: "Patient clinical info updated successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Link two existing patients together into an active PretheekshaCouple
+ * POST /api/v1/clinic/patients/link-partner
+ */
+export const linkPatientsAsCouple = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { patientId1, patientId2 } = req.body;
+
+    if (!patientId1 || !patientId2) {
+      res.status(400).json({
+        status: "fail",
+        message: "Both patient records are required to link partners",
+      });
+      return;
+    }
+
+    if (patientId1 === patientId2) {
+      res.status(400).json({
+        status: "fail",
+        message: "Cannot link a patient with themselves",
+      });
+      return;
+    }
+
+    const p1 = Types.ObjectId.isValid(patientId1)
+      ? await PretheekshaUser.findOne({ _id: patientId1, deletedAt: null })
+      : await PretheekshaUser.findOne({ code: String(patientId1).trim().toUpperCase(), deletedAt: null });
+
+    const p2 = Types.ObjectId.isValid(patientId2)
+      ? await PretheekshaUser.findOne({ _id: patientId2, deletedAt: null })
+      : await PretheekshaUser.findOne({ code: String(patientId2).trim().toUpperCase(), deletedAt: null });
+
+    if (!p1 || !p2) {
+      res.status(404).json({
+        status: "fail",
+        message: "One or both patient records could not be found",
+      });
+      return;
+    }
+
+    // Verify neither already has an active couple
+    const activeCouple = await PretheekshaCouple.findOne({
+      "members.patient": { $in: [p1._id, p2._id] },
+      status: "active",
+    });
+
+    if (activeCouple) {
+      res.status(400).json({
+        status: "fail",
+        message: "One of the patients is already linked in an active couple record",
+      });
+      return;
+    }
+
+    const coupleCode = generatePatientCode();
+
+    const role1 =
+      p1.sex === "female"
+        ? "intended_mother"
+        : p1.sex === "male"
+        ? "intended_father"
+        : "partner";
+
+    const role2 =
+      p2.sex === "female"
+        ? "intended_mother"
+        : p2.sex === "male"
+        ? "intended_father"
+        : "partner";
+
+    const createdBy =
+      req.admin?.id && Types.ObjectId.isValid(req.admin.id)
+        ? new Types.ObjectId(req.admin.id)
+        : undefined;
+
+    const coupleDoc = new PretheekshaCouple({
+      code: coupleCode,
+      members: [
+        { patient: p1._id, role: role1, since: new Date() },
+        { patient: p2._id, role: role2, since: new Date() },
+      ],
+      status: "active",
+      createdBy,
+    });
+
+    await coupleDoc.save();
+
+    res.status(200).json({
+      status: "success",
+      message: "Partners linked successfully as a couple",
+      data: {
+        coupleCode,
+        members: [
+          { id: p1._id, code: p1.code, fullName: p1.fullName, role: role1 },
+          { id: p2._id, code: p2.code, fullName: p2.fullName, role: role2 },
+        ],
       },
     });
   } catch (error) {

@@ -35,6 +35,7 @@ export interface IPretheekshaUser extends Document {
   };
   allergies: string[];
   medicalHistory?: string;
+  protocol?: string;
   files: IClinicalFile[];
   deletedAt?: Date | null;
   deletedBy?: Types.ObjectId | null;
@@ -102,6 +103,11 @@ const pretheekshaUserSchema = new Schema<IPretheekshaUser>(
       required: true,
     },
     bloodGroup: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    protocol: {
       type: String,
       trim: true,
       default: "",
