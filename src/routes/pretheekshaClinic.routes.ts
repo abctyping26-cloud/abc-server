@@ -5,6 +5,7 @@ import {
   getPatientById,
   updatePatientClinicalInfo,
   linkPatientsAsCouple,
+  deletePatient,
 } from "../controllers/pretheekshaUser.controller.js";
 
 const router = Router();
@@ -23,5 +24,8 @@ router.get("/:id", getPatientById);
 
 // Update patient clinical profile (blood group, protocol, allergies, medical history)
 router.patch("/:id", updatePatientClinicalInfo);
+
+// Delete patient record
+router.delete("/:id", deletePatient);
 
 export default router;

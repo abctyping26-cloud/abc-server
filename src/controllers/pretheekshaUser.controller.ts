@@ -676,3 +676,54 @@ export const linkPatientsAsCouple = async (
     next(error);
   }
 };
+
+/**
+ * Soft delete a patient record and close/detach any active couple memberships
+ * DELETE /api/v1/clinic/patients/:id
+ */
+export const deletePatient = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : (rawId || "");
+
+    const filter: any = Types.ObjectId.isValid(id)
+      ? { _id: id, deletedAt: null }
+      : { code: id.trim().toUpperCase(), deletedAt: null };
+
+    const patient = await PretheekshaUser.findOne(filter);
+    if (!patient) {
+      res.status(404).json({
+        status: "fail",
+        message: "Patient record not found or already deleted",
+      });
+      return;
+    }
+
+    const deletedBy =
+      req.admin?.id && Types.ObjectId.isValid(req.admin.id)
+        ? new Types.ObjectId(req.admin.id)
+        : undefined;
+
+    // Soft delete patient record
+    patient.deletedAt = new Date();
+    if (deletedBy) patient.deletedBy = deletedBy;
+    await patient.save();
+
+    // Close any active couples where this patient was a member
+    await PretheekshaCouple.updateMany(
+      { "members.patient": patient._id, status: "active" },
+      { $set: { status: "closed" } }
+    );
+
+    res.status(200).json({
+      status: "success",
+      message: "Patient record deleted successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
