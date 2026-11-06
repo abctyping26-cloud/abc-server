@@ -10,6 +10,7 @@ import noteRoutes from "./note.routes.js";
 import expenseReminderRoutes from "./expenseReminder.routes.js";
 import workLogRoutes from "./workLog.routes.js";
 import pretheekshaClinicRoutes from "./pretheekshaClinic.routes.js";
+import clinicInventoryRoutes from "./clinicInventory.routes.js";
 
 const apiRouter = Router();
 
@@ -17,6 +18,8 @@ apiRouter.use("/health", healthRoutes);
 apiRouter.use("/client", clientRoutes);
 apiRouter.use("/clinic/patients", pretheekshaClinicRoutes);
 apiRouter.use("/admin/pretheeksha/patients", pretheekshaClinicRoutes);
+apiRouter.use("/clinic/inventory", clinicInventoryRoutes);
+apiRouter.use("/admin/pretheeksha/inventory", clinicInventoryRoutes);
 apiRouter.use("/admin/clients", clientAdminRoutes);
 apiRouter.use("/admin/accounting", accountingRoutes);
 apiRouter.use("/admin/notes", noteRoutes);
