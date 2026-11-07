@@ -11,6 +11,7 @@ import expenseReminderRoutes from "./expenseReminder.routes.js";
 import workLogRoutes from "./workLog.routes.js";
 import pretheekshaClinicRoutes from "./pretheekshaClinic.routes.js";
 import clinicInventoryRoutes from "./clinicInventory.routes.js";
+import clinicSignatureRoutes from "./clinicSignature.routes.js";
 
 const apiRouter = Router();
 
@@ -20,6 +21,8 @@ apiRouter.use("/clinic/patients", pretheekshaClinicRoutes);
 apiRouter.use("/admin/pretheeksha/patients", pretheekshaClinicRoutes);
 apiRouter.use("/clinic/inventory", clinicInventoryRoutes);
 apiRouter.use("/admin/pretheeksha/inventory", clinicInventoryRoutes);
+apiRouter.use("/clinic/signatures", clinicSignatureRoutes);
+apiRouter.use("/admin/pretheeksha/signatures", clinicSignatureRoutes);
 apiRouter.use("/admin/clients", clientAdminRoutes);
 apiRouter.use("/admin/accounting", accountingRoutes);
 apiRouter.use("/admin/notes", noteRoutes);
