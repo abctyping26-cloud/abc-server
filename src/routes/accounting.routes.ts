@@ -13,6 +13,7 @@ import {
   getBankTransactions,
   createBankTransaction,
   createInvoice,
+  updateInvoice,
   getInvoices,
   getInvoiceById,
   deleteInvoice,
@@ -39,7 +40,8 @@ const router = Router();
 router.get("/invoices", getInvoices);
 router.post("/invoices", createInvoice);
 router.get("/invoices/:id", getInvoiceById);
-router.delete("/invoices/:id", authenticateAdmin, requireDeletePermission, deleteInvoice);
+router.put("/invoices/:id", updateInvoice);
+router.delete("/invoices/:id", deleteInvoice);
 
 // Invoice Sequence Counter
 router.get("/invoice-sequence", getInvoiceSequence);

@@ -9,6 +9,8 @@ export interface IInvoiceLineItem {
   totalAmount: number;
   employee: string;
   costPrice: number;
+  mrp?: number;
+  gstRate?: number;
 }
 
 export interface IInvoiceCustomer {
@@ -41,6 +43,8 @@ export interface IInvoiceFinancialSummary {
   grossAmount: string;
   paid: string;
   balance: string;
+  dbTotal?: string;
+  publicTotal?: string;
 }
 
 export interface IAccountingInvoice extends Document {
@@ -79,6 +83,8 @@ const invoiceLineItemSchema = new Schema<IInvoiceLineItem>(
     totalAmount: { type: Number, required: true, default: 0 },
     employee: { type: String, default: "", trim: true },
     costPrice: { type: Number, default: 0 },
+    mrp: { type: Number, default: 0 },
+    gstRate: { type: Number, default: 0 },
   },
   { _id: false }
 );
@@ -156,6 +162,8 @@ const accountingInvoiceSchema = new Schema<IAccountingInvoice>(
       grossAmount: { type: String, default: "0.00" },
       paid: { type: String, default: "0.00" },
       balance: { type: String, default: "0.00" },
+      dbTotal: { type: String, default: "0.00" },
+      publicTotal: { type: String, default: "0.00" },
     },
     bank: {
       type: String,

@@ -550,6 +550,25 @@ export const createInvoice = async (
       status = "partial";
     }
 
+    // Compute Public and DB Totals
+    let calcPub = 0;
+    let calcDb = 0;
+    const itemsList = Array.isArray(lineItems) ? lineItems : [];
+    itemsList.forEach((it: any) => {
+      const q = Number(it.qty) || 1;
+      const billedP = Number(it.unitPrice) || 0;
+      const mrpP = Number(it.mrp) || billedP;
+      const gst = Number(it.gstRate) || 0;
+      calcPub += (q * billedP) * (1 + gst / 100);
+      calcDb += (q * mrpP) * (1 + gst / 100);
+    });
+
+    const finSummary = {
+      ...financialSummary,
+      publicTotal: financialSummary.publicTotal || String(calcPub.toFixed(2)),
+      dbTotal: financialSummary.dbTotal || String(calcDb.toFixed(2)),
+    };
+
     const newInvoice = await AccountingInvoice.create({
       invoiceNo: finalInvoiceNo,
       invoiceDate,
@@ -571,7 +590,7 @@ export const createInvoice = async (
       },
       lineItems: Array.isArray(lineItems) ? lineItems : [],
       paymentDetails,
-      financialSummary,
+      financialSummary: finSummary,
       bank: String(bank).trim(),
       bankC: String(bankC).trim(),
       supplier: String(supplier).trim(),
@@ -595,6 +614,97 @@ export const createInvoice = async (
         invoice: newInvoice,
         nextInvoiceNo: formatSequenceNumber(seq.count, seq.padding),
         recentInvoiceNo: finalInvoiceNo,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Update existing invoice in MongoDB
+ */
+export const updateInvoice = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const {
+      invoiceNo,
+      invoiceDate,
+      invoiceTime,
+      customer,
+      lineItems = [],
+      paymentDetails = {},
+      financialSummary = {},
+      notes = "",
+      status = "paid",
+    } = req.body;
+
+    const invoice = await AccountingInvoice.findById(id);
+    if (!invoice) {
+      res.status(404).json({
+        status: "fail",
+        message: "Invoice not found.",
+      });
+      return;
+    }
+
+    if (customer) {
+      invoice.customer = {
+        ...invoice.customer,
+        name: customer.name || invoice.customer.name,
+        mobile: customer.mobile !== undefined ? String(customer.mobile).trim() : invoice.customer.mobile,
+        email: customer.email !== undefined ? String(customer.email).trim() : invoice.customer.email,
+        address: customer.address !== undefined ? String(customer.address).trim() : invoice.customer.address,
+      };
+    }
+
+    if (invoiceNo) invoice.invoiceNo = invoiceNo;
+    if (invoiceDate) invoice.invoiceDate = invoiceDate;
+    if (invoiceTime) invoice.invoiceTime = invoiceTime;
+    if (notes !== undefined) invoice.notes = notes;
+    if (status) invoice.status = status;
+
+    if (Array.isArray(lineItems)) {
+      invoice.lineItems = lineItems as any;
+    }
+
+    // Compute Public and DB Totals
+    let calcPub = 0;
+    let calcDb = 0;
+    (invoice.lineItems || []).forEach((it: any) => {
+      const q = Number(it.qty) || 1;
+      const billedP = Number(it.unitPrice) || 0;
+      const mrpP = Number(it.mrp) || billedP;
+      const gst = Number(it.gstRate) || 0;
+      calcPub += (q * billedP) * (1 + gst / 100);
+      calcDb += (q * mrpP) * (1 + gst / 100);
+    });
+
+    invoice.financialSummary = {
+      ...invoice.financialSummary,
+      ...financialSummary,
+      publicTotal: financialSummary.publicTotal || String(calcPub.toFixed(2)),
+      dbTotal: financialSummary.dbTotal || String(calcDb.toFixed(2)),
+    };
+
+    if (paymentDetails) {
+      invoice.paymentDetails = {
+        ...invoice.paymentDetails,
+        ...paymentDetails,
+      };
+    }
+
+    await invoice.save();
+
+    res.status(200).json({
+      status: "success",
+      message: `Invoice #${invoice.invoiceNo} updated successfully in MongoDB.`,
+      data: {
+        invoice,
       },
     });
   } catch (error) {
@@ -677,7 +787,27 @@ export const getInvoices = async (
           customer: inv.customer,
           lineItems: inv.lineItems || [],
           paymentDetails: inv.paymentDetails || {},
-          financialSummary: inv.financialSummary || {},
+          financialSummary: (() => {
+            const fs = inv.financialSummary || {};
+            let pub = Number(fs.publicTotal || fs.grossAmount || fs.total || 0);
+            let db = Number(fs.dbTotal || 0);
+            if (db <= 0) {
+              const its = inv.lineItems || [];
+              let calcDb = 0;
+              its.forEach((it: any) => {
+                const q = Number(it.qty) || 1;
+                const mrpP = Number(it.mrp) || Number(it.unitPrice) || 0;
+                const gst = Number(it.gstRate) || 0;
+                calcDb += (q * mrpP) * (1 + gst / 100);
+              });
+              db = calcDb > 0 ? calcDb : pub;
+            }
+            return {
+              ...fs,
+              publicTotal: String(pub.toFixed(2)),
+              dbTotal: String(db.toFixed(2)),
+            };
+          })(),
           bank: inv.bank || "",
           bankC: inv.bankC || "",
           supplier: inv.supplier || "",
