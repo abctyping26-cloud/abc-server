@@ -40,7 +40,7 @@ const clinicInventoryItemSchema = new Schema<IClinicInventoryItem>(
       default: "manual",
     },
   },
-  { timestamps: true }
+  { timestamps: true, collection: "inventory-preth" }
 );
 
 clinicInventoryItemSchema.index({ searchName: "text", genericName: "text", hsnCode: "text" });

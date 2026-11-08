@@ -16,7 +16,7 @@ const clinicHsnCodeSchema = new Schema<IClinicHsnCode>(
     description: { type: String, required: true, trim: true },
     gstRate: { type: Number, required: true, default: 12 },
   },
-  { timestamps: true }
+  { timestamps: true, collection: "hsncodes-preth" }
 );
 
 export const DEFAULT_HSN_CODES = [
