@@ -5,6 +5,7 @@ import { AdminUser } from "../models/adminUser.model.js";
 
 import { ensureServicesSeeded } from "../services/serviceSeed.service.js";
 import { ensureWebsiteContentSeeded } from "../services/websiteContentSeed.service.js";
+import { ensureHeroContentSeeded } from "../services/heroContentSeed.service.js";
 
 /**
  * Ensures that the master admin account exists in 'user-admin' collection.
@@ -50,6 +51,7 @@ export const connectDatabase = async (): Promise<void> => {
     await ensureMasterAdmin();
     await ensureServicesSeeded();
     await ensureWebsiteContentSeeded();
+    await ensureHeroContentSeeded();
   } catch (error) {
     console.error("❌ Failed to connect to MongoDB:", error);
     // In production, you may want to exit process if DB is critical

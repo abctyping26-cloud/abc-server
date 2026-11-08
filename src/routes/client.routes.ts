@@ -13,6 +13,7 @@ import {
   getServiceBySlug,
 } from "../controllers/service.controller.js";
 import { getTopMarqueeConfig } from "../controllers/websiteContent.controller.js";
+import { getActiveHero } from "../controllers/heroContent.controller.js";
 import { authenticateClient } from "../middlewares/auth.middleware.js";
 
 const router = Router();
@@ -34,5 +35,6 @@ router.get("/services/:slug", getServiceBySlug);
 
 // Public website content routes
 router.get("/website-content/top-marquee", getTopMarqueeConfig);
+router.get("/website-content/hero", getActiveHero);
 
 export default router;

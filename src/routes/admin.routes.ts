@@ -37,6 +37,16 @@ import {
   resetTopMarqueeConfig,
 } from "../controllers/websiteContent.controller.js";
 import {
+  getActiveHero,
+  getHeroTimeline,
+  createOrUpdateHeroTimeline,
+  activateHeroTimelineEntry,
+  deleteHeroTimelineEntry,
+  resetHeroToDefault,
+  uploadHeroImage,
+} from "../controllers/heroContent.controller.js";
+import { upload } from "../middlewares/upload.middleware.js";
+import {
   authenticateAdmin,
   requireDeletePermission,
 } from "../middlewares/auth.middleware.js";
@@ -67,6 +77,15 @@ router.post("/services/:slug/reset", authenticateAdmin, resetService);
 router.get("/website-content/top-marquee", authenticateAdmin, getTopMarqueeConfig);
 router.put("/website-content/top-marquee", authenticateAdmin, updateTopMarqueeConfig);
 router.post("/website-content/top-marquee/reset", authenticateAdmin, resetTopMarqueeConfig);
+
+// Website Content / Hero Section & Timeline management routes
+router.get("/website-content/hero", authenticateAdmin, getActiveHero);
+router.get("/website-content/hero/timeline", authenticateAdmin, getHeroTimeline);
+router.post("/website-content/hero", authenticateAdmin, createOrUpdateHeroTimeline);
+router.post("/website-content/hero/activate/:id", authenticateAdmin, activateHeroTimelineEntry);
+router.delete("/website-content/hero/:id", authenticateAdmin, deleteHeroTimelineEntry);
+router.post("/website-content/hero/reset", authenticateAdmin, resetHeroToDefault);
+router.post("/website-content/hero/upload", authenticateAdmin, upload.single("image"), uploadHeroImage);
 
 // Worker admin management routes (Direct MongoDB 'user-admin' collection)
 router.get("/workers", getWorkerAdmins);
